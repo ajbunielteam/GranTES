@@ -13,8 +13,7 @@
     <nav class="navbar">
         <div class="nav-container">
             <div class="nav-logo">
-                <img src="nemsulogo.png" alt="NEMSULOGO" width="90">
-                <span> GranTES</span>
+                <img src="granteslogo.png" alt="GRANTESLOGO" width="120">
             </div>
             <div class="nav-menu">
                 <a href="#" class="nav-link" onclick="showHome()">Home</a>
@@ -29,7 +28,9 @@
         <section id="home" class="section active">
             <div class="logo">
                 <div class="logo-content">
-                    <h1>"Empowering connectivity, ensuring transparency, and supporting every NEMSU Cantilan scholar."</h1>
+                    <div class="empowering-quote">
+                        <h1>"Empowering connectivity, ensuring transparency, and supporting every NEMSU Cantilan scholar."</h1>
+                    </div>
                     
                     <div class="about-section">
                         <h2>Vision</h2>
@@ -49,7 +50,7 @@
                     <a href="https://docs.google.com/forms/d/e/1FAIpQLSejN9ltqtPy2eiC3TtPXPBl0bGLwwb6UjfbT5YITEVl8BiOcA/viewform?usp=header" target="_blank" class="btn btn-primary btn-large">Apply Here</a>
                 </div>
                 <div class="logo-image">
-                    <img src="nemsulogo.png" alt="NEMSULOGO" width="300">
+                    <img src="granteslogo.png" alt="GRANTESLOGO" width="350">
                 </div>
             </div>
 
@@ -59,7 +60,7 @@
                     <i class="fas fa-link"></i>
                     <h4>Quick Links</h4>
                 </div>
-                <div class="quick-links-buttons">
+                <div class="quick-links-buttons">   
                     <a href="https://ched.gov.ph/" target="_blank" class="quick-link-btn">
                         <i class="fas fa-graduation-cap"></i>
                         CHED Website
@@ -414,18 +415,10 @@
                         <div id="admin-homepage" class="admin-homepage-content">
                             <!-- Admin Quick Actions -->
                             <div class="admin-quick-actions">
-                                <div class="register-student-container">
-                                    <button class="quick-action-btn register-student" onclick="openStudentRegistrationModal()">
-                                        <i class="fas fa-user-plus"></i>
-                                        <span>Register Single Student</span>
-                                    </button>
-                                    <div class="register-student-dropdown">
-                                        <button class="quick-action-btn register-student-bulk" onclick="openBulkRegistrationModal()">
-                                            <i class="fas fa-file-excel"></i>
-                                            <span>Bulk Register from Excel</span>
-                                        </button>
-                                    </div>
-                                </div>
+                                <button class="quick-action-btn register-student" onclick="openStudentRegistrationModal()">
+                                    <i class="fas fa-user-plus"></i>
+                                    <span>Register Single Student</span>
+                                </button>
                                 <!-- View Applications removed -->
                                 <button class="quick-action-btn manage-students" onclick="openManageStudents()">
                                     <i class="fas fa-users"></i>
@@ -553,6 +546,50 @@
                         <div class="settings-section">
                             <h3>System Settings</h3>
                             <div class="settings-form">
+                                <!-- Change Admin Password Section -->
+                                <div class="settings-section-card">
+                                    <h4><i class="fas fa-key"></i> Change Admin Password</h4>
+                                    <div class="form-group">
+                                        <label for="currentPassword">Current Password:</label>
+                                        <input type="password" id="currentPassword" placeholder="Enter current password">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPassword">New Password:</label>
+                                        <input type="password" id="newPassword" placeholder="Enter new password">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="confirmNewPassword">Confirm New Password:</label>
+                                        <input type="password" id="confirmNewPassword" placeholder="Confirm new password">
+                                    </div>
+                                    <button class="btn btn-primary" onclick="changeAdminPassword()">Change Password</button>
+                                </div>
+                                
+                                <!-- Change Student Password Section -->
+                                <div class="settings-section-card">
+                                    <h4><i class="fas fa-user-graduate"></i> Change Student Password</h4>
+                                    <div class="form-group">
+                                        <label for="studentSearch">Search Student:</label>
+                                        <input type="text" id="studentSearch" placeholder="Enter student name, ID, or award number" onkeyup="searchStudentsForPasswordChange()">
+                                        <div id="studentSearchResults" class="student-search-results"></div>
+                                    </div>
+                                    <div id="studentPasswordForm" style="display: none;">
+                                        <div class="form-group">
+                                            <label for="selectedStudentInfo">Selected Student:</label>
+                                            <div id="selectedStudentInfo" class="selected-student-info"></div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="newStudentPassword">New Password:</label>
+                                            <input type="password" id="newStudentPassword" placeholder="Enter new password for student">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="confirmStudentPassword">Confirm New Password:</label>
+                                            <input type="password" id="confirmStudentPassword" placeholder="Confirm new password">
+                                        </div>
+                                        <button class="btn btn-primary" onclick="changeStudentPassword()">Change Student Password</button>
+                                        <button class="btn btn-secondary" onclick="clearStudentPasswordForm()">Cancel</button>
+                                    </div>
+                                </div>
+                                
                                 <div class="form-group">
                                     <label for="subsidyTypes">Subsidy Types:</label>
                                     <textarea id="subsidyTypes" rows="3" placeholder="Enter subsidy types (one per line)"></textarea>
@@ -784,98 +821,6 @@
                         <button type="button" class="btn btn-secondary" onclick="closeStudentRegistrationModal()">Cancel</button>
                     </div>
                 </form>
-            </div>
-        </div>
-    </div>
-
-    <!-- Bulk Student Registration Modal -->
-    <div id="bulkRegistrationModal" class="modal">
-        <div class="modal-content bulk-registration-modal">
-            <div class="modal-header">
-                <h3>Bulk Register Students from Excel</h3>
-                <span class="close" onclick="closeBulkRegistrationModal()">&times;</span>
-            </div>
-            <div class="modal-body">
-                <!-- Step 1: File Upload -->
-                <div id="bulkStep1" class="bulk-step active">
-                    <div class="upload-section">
-                        <div class="upload-area" id="uploadArea">
-                            <i class="fas fa-cloud-upload-alt"></i>
-                            <h4>Upload Excel File with Student Names</h4>
-                            <p>Drag and drop your Excel file here or click to browse</p>
-                            <p class="file-format-info">Supported formats: .xlsx, .xls</p>
-                            <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display: none;">
-                            <button type="button" class="btn btn-primary" onclick="document.getElementById('excelFileInput').click()">
-                                <i class="fas fa-file-excel"></i> Choose Excel File
-                            </button>
-                        </div>
-                        <div class="file-info" id="fileInfo" style="display: none;">
-                            <div class="file-details">
-                                <i class="fas fa-file-excel"></i>
-                                <div class="file-text">
-                                    <div class="file-name" id="fileName"></div>
-                                    <div class="file-size" id="fileSize"></div>
-                                </div>
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="removeFile()">Remove</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn btn-primary" id="processFileBtn" onclick="processExcelFile()" disabled>
-                            <i class="fas fa-cogs"></i> Extract Student Names
-                        </button>
-                        <button type="button" class="btn btn-secondary" onclick="closeBulkRegistrationModal()">Cancel</button>
-                    </div>
-                </div>
-
-                <!-- Step 2: Student Data Entry -->
-                <div id="bulkStep2" class="bulk-step">
-                    <div class="bulk-form-header">
-                        <h4>Enter Award Numbers and Passwords</h4>
-                        <p>For each student, enter their unique award number and password. Students will use these credentials to log in.</p>
-                    </div>
-                    
-                    <!-- Quick Actions -->
-                    <div class="quick-actions-bar">
-                        <div class="quick-action-group">
-                            <label for="defaultPassword">Default Password:</label>
-                            <input type="password" id="defaultPassword" placeholder="e.g., student123" onchange="applyDefaultPassword()">
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="applyDefaultPassword()">
-                                <i class="fas fa-magic"></i> Apply to All
-                            </button>
-                        </div>
-                        <div class="quick-action-group">
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="generateAllAwardNumbers()">
-                                <i class="fas fa-sync"></i> Generate All Award Numbers
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Students List -->
-                    <div class="students-section">
-                        <div class="students-header">
-                            <h5><i class="fas fa-users"></i> Student Accounts (<span id="studentCount">0</span> students)</h5>
-                            <div class="students-summary">
-                                <span class="summary-item"><i class="fas fa-check-circle text-success"></i> <span id="completedCount">0</span> Complete</span>
-                                <span class="summary-item"><i class="fas fa-exclamation-circle text-warning"></i> <span id="incompleteCount">0</span> Incomplete</span>
-                            </div>
-                        </div>
-                        
-                        <div class="students-list" id="studentsList">
-                            <!-- Student entries will be populated here -->
-                        </div>
-                    </div>
-
-                    <div class="modal-actions">
-                        <button type="button" class="btn btn-success btn-large" onclick="registerBulkStudents()" id="registerAllBtn" disabled>
-                            <i class="fas fa-user-plus"></i> Register All Students
-                        </button>
-                        <button type="button" class="btn btn-secondary" onclick="goToStep1()">
-                            <i class="fas fa-arrow-left"></i> Back to Upload
-                        </button>
-                        <button type="button" class="btn btn-secondary" onclick="closeBulkRegistrationModal()">Cancel</button>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -1134,352 +1079,6 @@
             document.getElementById('totalApproved').textContent = approvedStudents;
             document.getElementById('totalPending').textContent = pendingStudents;
             document.getElementById('totalArchived').textContent = archivedStudents;
-        }
-
-        // Bulk Registration Functions
-        let uploadedFile = null;
-        let extractedStudents = [];
-
-        function openBulkRegistrationModal() {
-            document.getElementById('bulkRegistrationModal').style.display = 'block';
-            resetBulkModal();
-        }
-
-        function closeBulkRegistrationModal() {
-            document.getElementById('bulkRegistrationModal').style.display = 'none';
-            resetBulkModal();
-        }
-
-        function resetBulkModal() {
-            // Reset to step 1
-            document.getElementById('bulkStep1').classList.add('active');
-            document.getElementById('bulkStep2').classList.remove('active');
-            
-            // Clear file
-            uploadedFile = null;
-            extractedStudents = [];
-            document.getElementById('excelFileInput').value = '';
-            document.getElementById('uploadArea').style.display = 'block';
-            document.getElementById('fileInfo').style.display = 'none';
-            document.getElementById('processFileBtn').disabled = true;
-            
-            // Clear form
-            document.getElementById('defaultCourse').value = '';
-            document.getElementById('defaultYear').value = '';
-            document.getElementById('defaultPassword').value = '';
-            document.getElementById('studentsList').innerHTML = '';
-        }
-
-        function goToStep1() {
-            document.getElementById('bulkStep1').classList.add('active');
-            document.getElementById('bulkStep2').classList.remove('active');
-        }
-
-        function goToStep2() {
-            document.getElementById('bulkStep1').classList.remove('active');
-            document.getElementById('bulkStep2').classList.add('active');
-        }
-
-        // File upload handling
-        document.addEventListener('DOMContentLoaded', function() {
-            const fileInput = document.getElementById('excelFileInput');
-            const uploadArea = document.getElementById('uploadArea');
-            
-            if (fileInput && uploadArea) {
-                // Click to upload
-                uploadArea.addEventListener('click', () => {
-                    fileInput.click();
-                });
-
-                // File selection
-                fileInput.addEventListener('change', handleFileSelect);
-
-                // Drag and drop
-                uploadArea.addEventListener('dragover', handleDragOver);
-                uploadArea.addEventListener('dragleave', handleDragLeave);
-                uploadArea.addEventListener('drop', handleDrop);
-            }
-        });
-
-        function handleFileSelect(event) {
-            const file = event.target.files[0];
-            if (file) {
-                processFile(file);
-            }
-        }
-
-        function handleDragOver(event) {
-            event.preventDefault();
-            event.currentTarget.classList.add('dragover');
-        }
-
-        function handleDragLeave(event) {
-            event.currentTarget.classList.remove('dragover');
-        }
-
-        function handleDrop(event) {
-            event.preventDefault();
-            event.currentTarget.classList.remove('dragover');
-            
-            const files = event.dataTransfer.files;
-            if (files.length > 0) {
-                processFile(files[0]);
-            }
-        }
-
-        function processFile(file) {
-            // Validate file type
-            const validTypes = [
-                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-                'application/vnd.ms-excel' // .xls
-            ];
-            
-            if (!validTypes.includes(file.type)) {
-                showNotification('Please upload a valid Excel file (.xlsx or .xls)', 'error');
-                return;
-            }
-
-            uploadedFile = file;
-            
-            // Show file info
-            document.getElementById('fileName').textContent = file.name;
-            document.getElementById('fileSize').textContent = formatFileSize(file.size);
-            document.getElementById('uploadArea').style.display = 'none';
-            document.getElementById('fileInfo').style.display = 'block';
-            document.getElementById('processFileBtn').disabled = false;
-        }
-
-        function removeFile() {
-            uploadedFile = null;
-            document.getElementById('excelFileInput').value = '';
-            document.getElementById('uploadArea').style.display = 'block';
-            document.getElementById('fileInfo').style.display = 'none';
-            document.getElementById('processFileBtn').disabled = true;
-        }
-
-        function formatFileSize(bytes) {
-            if (bytes === 0) return '0 Bytes';
-            const k = 1024;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        }
-
-        function processExcelFile() {
-            if (!uploadedFile) {
-                showNotification('Please select a file first', 'error');
-                return;
-            }
-
-            // For demo purposes, we'll simulate Excel parsing
-            // In a real implementation, you would use a library like SheetJS
-            showNotification('Processing Excel file...', 'info');
-            
-            // Simulate processing delay
-            setTimeout(() => {
-                // Mock data - in real implementation, parse actual Excel file
-                extractedStudents = [
-                    { firstName: 'John', lastName: 'Doe' },
-                    { firstName: 'Jane', lastName: 'Smith' },
-                    { firstName: 'Michael', lastName: 'Johnson' },
-                    { firstName: 'Sarah', lastName: 'Williams' },
-                    { firstName: 'David', lastName: 'Brown' },
-                    { firstName: 'Emily', lastName: 'Davis' },
-                    { firstName: 'Christopher', lastName: 'Miller' },
-                    { firstName: 'Jessica', lastName: 'Wilson' }
-                ];
-                
-                populateStudentsList();
-                goToStep2();
-                showNotification(`Successfully extracted ${extractedStudents.length} students from Excel file`, 'success');
-            }, 1500);
-        }
-
-        function populateStudentsList() {
-            const container = document.getElementById('studentsList');
-            const defaultCourse = document.getElementById('defaultCourse').value;
-            const defaultYear = document.getElementById('defaultYear').value;
-            const defaultPassword = document.getElementById('defaultPassword').value;
-
-            container.innerHTML = extractedStudents.map((student, index) => `
-                <div class="student-entry" data-index="${index}">
-                    <div class="student-name">
-                        <i class="fas fa-user"></i>
-                        ${student.firstName} ${student.lastName}
-                    </div>
-                    <input type="text" placeholder="Award Number" class="award-number-input" 
-                           value="${generateAwardNumber(index)}" required
-                           onchange="validateStudentEntry(${index})" oninput="updateStudentSummary()">
-                    <input type="password" placeholder="Password" class="password-input" 
-                           value="${defaultPassword}" required
-                           onchange="validateStudentEntry(${index})" oninput="updateStudentSummary()">
-                    <button type="button" class="remove-student-btn" onclick="removeStudent(${index})" title="Remove student">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            `).join('');
-            
-            updateStudentSummary();
-        }
-
-        function generateAwardNumber(index) {
-            // Generate a unique award number
-            const year = new Date().getFullYear();
-            const paddedIndex = String(index + 1).padStart(3, '0');
-            return `AW${year}${paddedIndex}`;
-        }
-
-        function removeStudent(index) {
-            if (confirm(`Are you sure you want to remove ${extractedStudents[index].firstName} ${extractedStudents[index].lastName}?`)) {
-                extractedStudents.splice(index, 1);
-                populateStudentsList();
-            }
-        }
-
-        function applyDefaultsToAll() {
-            const defaultCourse = document.getElementById('defaultCourse').value;
-            const defaultYear = document.getElementById('defaultYear').value;
-            const defaultPassword = document.getElementById('defaultPassword').value;
-
-            // Apply defaults to all student entries
-            document.querySelectorAll('.student-entry').forEach((entry, index) => {
-                const courseInput = entry.querySelector('.course-input');
-                const yearInput = entry.querySelector('.year-input');
-                const passwordInput = entry.querySelector('.password-input');
-                
-                if (courseInput && defaultCourse) courseInput.value = defaultCourse;
-                if (yearInput && defaultYear) yearInput.value = defaultYear;
-                if (passwordInput && defaultPassword) passwordInput.value = defaultPassword;
-            });
-
-            updateStudentSummary();
-        }
-
-        function validateStudentEntry(index) {
-            const entry = document.querySelector(`[data-index="${index}"]`);
-            const awardNumberInput = entry.querySelector('.award-number-input');
-            const passwordInput = entry.querySelector('.password-input');
-            
-            let isValid = true;
-            
-            // Clear previous error states
-            awardNumberInput.classList.remove('error');
-            passwordInput.classList.remove('error');
-            entry.classList.remove('complete', 'incomplete');
-            
-            // Validate award number
-            if (!awardNumberInput.value.trim()) {
-                awardNumberInput.classList.add('error');
-                isValid = false;
-            } else {
-                // Check for duplicates
-                const allAwardNumbers = Array.from(document.querySelectorAll('.award-number-input'))
-                    .map(input => input.value.trim())
-                    .filter((value, i) => value && i !== index);
-                
-                if (allAwardNumbers.includes(awardNumberInput.value.trim())) {
-                    awardNumberInput.classList.add('error');
-                    isValid = false;
-                }
-            }
-            
-            // Validate password
-            if (!passwordInput.value.trim() || passwordInput.value.trim().length < 6) {
-                passwordInput.classList.add('error');
-                isValid = false;
-            }
-            
-            // Update entry status
-            if (isValid) {
-                entry.classList.add('complete');
-            } else {
-                entry.classList.add('incomplete');
-            }
-            
-            return isValid;
-        }
-
-        function updateStudentSummary() {
-            const totalStudents = extractedStudents.length;
-            const completedStudents = Array.from(document.querySelectorAll('.student-entry'))
-                .filter(entry => entry.classList.contains('complete')).length;
-            const incompleteStudents = totalStudents - completedStudents;
-            
-            document.getElementById('studentCount').textContent = totalStudents;
-            document.getElementById('completedCount').textContent = completedStudents;
-            document.getElementById('incompleteCount').textContent = incompleteStudents;
-            
-            // Enable/disable register button
-            const registerBtn = document.getElementById('registerAllBtn');
-            if (completedStudents === totalStudents && totalStudents > 0) {
-                registerBtn.disabled = false;
-                registerBtn.innerHTML = `<i class="fas fa-user-plus"></i> Register All ${totalStudents} Students`;
-            } else {
-                registerBtn.disabled = true;
-                registerBtn.innerHTML = `<i class="fas fa-user-plus"></i> Register All Students (${incompleteStudents} incomplete)`;
-            }
-        }
-
-        function registerBulkStudents() {
-            const defaultCourse = document.getElementById('defaultCourse').value;
-            const defaultYear = document.getElementById('defaultYear').value;
-            
-            if (!defaultCourse || !defaultYear) {
-                showNotification('Please fill in default course and year level', 'error');
-                return;
-            }
-
-            const studentsToRegister = [];
-            const errors = [];
-
-            // Validate all entries first
-            let allValid = true;
-            document.querySelectorAll('.student-entry').forEach((entry, index) => {
-                if (!validateStudentEntry(index)) {
-                    allValid = false;
-                }
-            });
-
-            if (!allValid) {
-                showNotification('Please fix all validation errors before registering students', 'error');
-                return;
-            }
-
-            // Collect student data
-            document.querySelectorAll('.student-entry').forEach((entry, index) => {
-                const awardNumber = entry.querySelector('.award-number-input').value.trim();
-                const password = entry.querySelector('.password-input').value.trim();
-                const student = extractedStudents[index];
-
-                studentsToRegister.push({
-                    firstName: student.firstName,
-                    lastName: student.lastName,
-                    studentId: `STU${String(index + 1).padStart(4, '0')}`,
-                    email: `${student.firstName.toLowerCase()}.${student.lastName.toLowerCase()}@student.edu`,
-                    awardNumber: awardNumber,
-                    password: password,
-                    course: defaultCourse,
-                    year: defaultYear,
-                    status: 'active',
-                    applicationStatus: 'none',
-                    registeredDate: new Date().toISOString(),
-                    isAdminCreated: true
-                });
-            });
-
-            // Register all students
-            const existingStudents = JSON.parse(localStorage.getItem('students') || '[]');
-            studentsToRegister.forEach(student => {
-                existingStudents.push(student);
-            });
-            
-            localStorage.setItem('students', JSON.stringify(existingStudents));
-            
-            // Update admin dashboard stats
-            updateAdminStats();
-            
-            showNotification(`Successfully registered ${studentsToRegister.length} students! They can now log in using their award numbers and passwords.`, 'success');
-            closeBulkRegistrationModal();
         }
 
         // GranTES List Functions
