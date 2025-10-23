@@ -251,7 +251,8 @@ function loadHomeFeed() {
         return audRaw === '' || audRaw === 'home' || audRaw === 'home page';
     }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     // Fallback: if no Home-specific posts, show latest recent posts so something appears
-    const postsToRender = (homePosts.length > 0 ? homePosts : allPosts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))).slice(0, 10);
+    // Limit to 6 most recent posts for homepage
+    const postsToRender = (homePosts.length > 0 ? homePosts : allPosts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))).slice(0, 6);
     if (postsToRender.length === 0) {
         feedEl.innerHTML = `
             <div class="welcome-message">
@@ -333,7 +334,8 @@ function handleLogin(event) {
     console.log('Login attempt:', { role, email, password });
     
     // First, accept admin credentials regardless of selected role to avoid UX issues
-    if ((email === 'admin@grantes.com' || email === 'admin@grantes.local' || email === 'admin') && password === 'admin123') {
+    const adminCredentials = JSON.parse(localStorage.getItem('adminCredentials') || '{"email": "admin@grantes.com", "password": "admin123"}');
+    if ((email === adminCredentials.email || email === 'admin@grantes.local' || email === 'admin') && password === adminCredentials.password) {
         currentUser = {
             id: 'admin',
             name: 'Administrator',
@@ -354,8 +356,9 @@ function handleLogin(event) {
     }
 
     if (role === 'admin') {
-        // Admin login (hardcoded for demo)
-        if ((email === 'admin@grantes.com' || email === 'admin@grantes.local' || email === 'admin') && password === 'admin123') {
+        // Admin login using stored credentials
+        const adminCredentials = JSON.parse(localStorage.getItem('adminCredentials') || '{"email": "admin@grantes.com", "password": "admin123"}');
+        if ((email === adminCredentials.email || email === 'admin@grantes.local' || email === 'admin') && password === adminCredentials.password) {
             currentUser = {
                 id: 'admin',
                 name: 'Administrator',
@@ -2877,6 +2880,3 @@ function filterStudents() {
 }
 
 function searchStudents() {
-    loadStudents();
-}
-
