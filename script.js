@@ -2880,3 +2880,171 @@ function filterStudents() {
 }
 
 function searchStudents() {
+    loadStudents();
+}
+
+// Admin Password Change Function
+function changeAdminPassword() {
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmNewPassword = document.getElementById('confirmNewPassword').value;
+    
+    // Validation
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+        showToast('Please fill in all password fields', 'error');
+        return;
+    }
+    
+    if (newPassword !== confirmNewPassword) {
+        showToast('New passwords do not match', 'error');
+        return;
+    }
+    
+    if (newPassword.length < 6) {
+        showToast('New password must be at least 6 characters long', 'error');
+        return;
+    }
+    
+    // Check current password (in a real app, this would be hashed)
+    const adminCredentials = JSON.parse(localStorage.getItem('adminCredentials') || '{"email": "admin@grantes.com", "password": "admin123"}');
+    
+    if (currentPassword !== adminCredentials.password) {
+        showToast('Current password is incorrect', 'error');
+        return;
+    }
+    
+    // Update password
+    adminCredentials.password = newPassword;
+    localStorage.setItem('adminCredentials', JSON.stringify(adminCredentials));
+    
+    // Clear form
+    document.getElementById('currentPassword').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('confirmNewPassword').value = '';
+    
+    showToast('Password changed successfully!', 'success');
+}
+
+// Student Password Change Functions
+let selectedStudentForPasswordChange = null;
+
+function searchStudentsForPasswordChange() {
+    const searchTerm = document.getElementById('studentSearch').value.trim().toLowerCase();
+    const resultsContainer = document.getElementById('studentSearchResults');
+    
+    if (searchTerm.length < 2) {
+        resultsContainer.style.display = 'none';
+        return;
+    }
+    
+    const students = JSON.parse(localStorage.getItem('students') || '[]');
+    const matchingStudents = students.filter(student => {
+        const fullName = `${student.firstName} ${student.lastName}`.toLowerCase();
+        const studentId = (student.studentId || '').toLowerCase();
+        const awardNumber = (student.awardNumber || '').toLowerCase();
+        const email = (student.email || '').toLowerCase();
+        
+        return fullName.includes(searchTerm) || 
+               studentId.includes(searchTerm) || 
+               awardNumber.includes(searchTerm) ||
+               email.includes(searchTerm);
+    }).slice(0, 10); // Limit to 10 results
+    
+    if (matchingStudents.length === 0) {
+        resultsContainer.innerHTML = '<div class="student-search-item"><p>No students found</p></div>';
+    } else {
+        resultsContainer.innerHTML = matchingStudents.map(student => `
+            <div class="student-search-item" onclick="selectStudentForPasswordChange(${student.id})">
+                <h5>${student.firstName} ${student.lastName}</h5>
+                <p>ID: ${student.studentId || 'N/A'} | Award: ${student.awardNumber || 'N/A'} | Email: ${student.email || 'N/A'}</p>
+            </div>
+        `).join('');
+    }
+    
+    resultsContainer.classList.add('show');
+    resultsContainer.style.display = 'block';
+}
+
+function selectStudentForPasswordChange(studentId) {
+    const students = JSON.parse(localStorage.getItem('students') || '[]');
+    const student = students.find(s => s.id === studentId);
+    
+    if (!student) {
+        showToast('Student not found', 'error');
+        return;
+    }
+    
+    selectedStudentForPasswordChange = student;
+    
+    // Hide search results
+    document.getElementById('studentSearchResults').style.display = 'none';
+    
+    // Show selected student info
+    document.getElementById('selectedStudentInfo').innerHTML = `
+        <h5>${student.firstName} ${student.lastName}</h5>
+        <p><strong>Student ID:</strong> ${student.studentId || 'N/A'}</p>
+        <p><strong>Award Number:</strong> ${student.awardNumber || 'N/A'}</p>
+        <p><strong>Email:</strong> ${student.email || 'N/A'}</p>
+        <p><strong>Department:</strong> ${student.department || 'N/A'}</p>
+    `;
+    
+    // Show password form
+    document.getElementById('studentPasswordForm').style.display = 'block';
+    
+    // Clear search input
+    document.getElementById('studentSearch').value = '';
+}
+
+function changeStudentPassword() {
+    if (!selectedStudentForPasswordChange) {
+        showToast('Please select a student first', 'error');
+        return;
+    }
+    
+    const newPassword = document.getElementById('newStudentPassword').value;
+    const confirmPassword = document.getElementById('confirmStudentPassword').value;
+    
+    // Validation
+    if (!newPassword || !confirmPassword) {
+        showToast('Please fill in both password fields', 'error');
+        return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+        showToast('Passwords do not match', 'error');
+        return;
+    }
+    
+    if (newPassword.length < 6) {
+        showToast('Password must be at least 6 characters long', 'error');
+        return;
+    }
+    
+    // Update student password
+    const students = JSON.parse(localStorage.getItem('students') || '[]');
+    const studentIndex = students.findIndex(s => s.id === selectedStudentForPasswordChange.id);
+    
+    if (studentIndex === -1) {
+        showToast('Student not found in database', 'error');
+        return;
+    }
+    
+    students[studentIndex].password = newPassword;
+    localStorage.setItem('students', JSON.stringify(students));
+    
+    // Clear form
+    clearStudentPasswordForm();
+    
+    showToast(`Password changed successfully for ${selectedStudentForPasswordChange.firstName} ${selectedStudentForPasswordChange.lastName}`, 'success');
+}
+
+function clearStudentPasswordForm() {
+    selectedStudentForPasswordChange = null;
+    document.getElementById('studentSearch').value = '';
+    document.getElementById('studentSearchResults').style.display = 'none';
+    document.getElementById('selectedStudentInfo').innerHTML = '';
+    document.getElementById('studentPasswordForm').style.display = 'none';
+    document.getElementById('newStudentPassword').value = '';
+    document.getElementById('confirmStudentPassword').value = '';
+}
+
