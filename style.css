@@ -74,7 +74,7 @@ body {
     height: 120px;            
     color: white;
     position: sticky;
-    top: 0;
+    top:0 ;
     z-index: 1000;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0);
 }
@@ -188,17 +188,17 @@ body {
 }
 
 .about-section h2 {
-    font-size: 1.5rem;
+    font-size: 2rem;
     font-weight: 600;
     color: #ffffff;
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem;
 }
 
 .about-section p {
-    font-size: 1rem;
-    line-height: 1.6;
+    font-size: 1.3rem;
+    line-height: 1.7;
     color: #ffffff;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1.8rem;
     text-align: left;
 }
 
@@ -218,11 +218,11 @@ body {
     }
     
     .about-section h2 {
-        font-size: 1.3rem;
+        font-size: 1.7rem;
     }
     
     .about-section p {
-        font-size: 0.95rem;
+        font-size: 1.1rem;
     }
 }
 
@@ -2823,7 +2823,7 @@ body {
 /* === Moved inline styles from index.html <style> block === */
 /* University Student Government Background */
 body {
-    background-image: url('nemsubackground.jpg');
+    background-image: url('grantesbg2.png');
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -2847,7 +2847,7 @@ body::before {
 /* Ensure main content has proper background */
 .main-container {
     background: rgba(255, 255, 255, 0.029);
-    backdrop-filter: blur(5px);
+    backdrop-filter: blur(1.5px);
     border-radius: 15px;
     margin: 20px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
@@ -4597,6 +4597,95 @@ body::before {
         grid-template-columns: 1fr;
     }
     .post-image { margin-bottom: 0.75rem; }
+}
+
+/* Settings Section Card Styling */
+.settings-section-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.settings-section-card h4 {
+    color: #1f2937;
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.settings-section-card h4 i {
+    color: #3b82f6;
+}
+
+/* Student Search Results */
+.student-search-results {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #ffffff;
+    margin-top: 0.5rem;
+    display: none;
+}
+
+.student-search-results.show {
+    display: block;
+}
+
+.student-search-item {
+    padding: 0.75rem;
+    border-bottom: 1px solid #f3f4f6;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.student-search-item:hover {
+    background-color: #f9fafb;
+}
+
+.student-search-item:last-child {
+    border-bottom: none;
+}
+
+.student-search-item h5 {
+    margin: 0 0 0.25rem 0;
+    color: #1f2937;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.student-search-item p {
+    margin: 0;
+    color: #6b7280;
+    font-size: 0.8rem;
+}
+
+/* Selected Student Info */
+.selected-student-info {
+    background: #f0f9ff;
+    border: 1px solid #0ea5e9;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 0.5rem;
+}
+
+.selected-student-info h5 {
+    margin: 0 0 0.5rem 0;
+    color: #0c4a6e;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.selected-student-info p {
+    margin: 0.25rem 0;
+    color: #075985;
+    font-size: 0.9rem;
 }
 
 /* Composer image preview */
