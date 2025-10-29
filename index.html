@@ -7,6 +7,9 @@
     <title>GranTES - Smart Subsidy Management System</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="api-config.js?v=10000016"></script>
+    <script src="script.js?v=10000016"></script>
 </head>
 <body>
     <!-- Navigation -->
@@ -351,6 +354,12 @@
                                             </div>
                                         </div>
                                     </div>
+                                    <!-- Change Password Button for Students -->
+                                    <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color);">
+                                        <button class="btn btn-secondary" onclick="showStudentChangePasswordForm()" style="width: 100%;">
+                                            <i class="fas fa-key"></i> Change Password
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -377,14 +386,14 @@
                             <i class="fas fa-check-circle"></i>
                             <div class="stat-info">
                                 <h3>INDIGENOUS PEOPLE</h3>
-                                <p id="totalApproved">0</p>
+                                <p id="totalIndigenous">0</p>
                             </div>
                         </div>
                         <div class="sidebar-stat-card">
                             <i class="fas fa-clock"></i>
                             <div class="stat-info">
                                 <h3>PWD's</h3>
-                                <p id="totalPending">0</p>
+                                <p id="totalPwd">0</p>
                             </div>
                         </div>
                         <div class="sidebar-stat-card">
@@ -400,7 +409,7 @@
                 <!-- Main Content Area -->
                 <div class="admin-main-content">
                     <div class="admin-content-header">
-                        <button class="admin-homepage-btn" onclick="showAdminTab('homepage')">
+                        <button class="admin-homepage-btn" onclick="showAdminTab('homepage'); updateAdminStats();">
                             <i class="fas fa-home"></i>
                             Admin Homepage
                         </button>
@@ -607,23 +616,6 @@
         </section>
     </div>
 
-    <!-- Modal for Application Review -->
-    <div id="reviewModal" class="modal">
-        <div class="modal-content review-modal">
-            <div class="modal-header">
-                <h3>Review Application</h3>
-                <span class="close" onclick="closeModal()">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div id="applicationDetails"></div>
-                <div class="modal-actions">
-                    <button class="btn btn-success" onclick="updateApplicationStatus('approved')">Approve</button>
-                    <button class="btn btn-danger" onclick="updateApplicationStatus('rejected')">Reject</button>
-                    <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <!-- Admin: Student Profile Modal -->
     <div id="studentProfileModal" class="modal">
@@ -732,6 +724,80 @@
         </div>
     </div>
 
+    <!-- Edit Student Modal -->
+    <div id="editStudentModal" class="modal">
+        <div class="modal-content student-registration-modal">
+            <div class="modal-header">
+                <h3>Edit Student</h3>
+                <span class="close" onclick="closeEditStudentModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="editStudentForm" onsubmit="handleEditStudent(event)">
+                    <input type="hidden" id="editStudentId">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editFirstName">First Name:</label>
+                            <input type="text" id="editFirstName" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="editLastName">Last Name:</label>
+                            <input type="text" id="editLastName" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="editEmail">Email:</label>
+                        <input type="email" id="editEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editDepartment">Department:</label>
+                        <select id="editDepartment" required>
+                            <option value="">Select Department</option>
+                            <option value="Department of Computer Studies">Department of Computer Studies</option>
+                            <option value="Department of Business and Management">Department of Business and Management</option>
+                            <option value="Department of Industrial Technology">Department of Industrial Technology</option>
+                            <option value="Department of General Teacher Training">Department of General Teacher Training</option>
+                            <option value="College of Criminal Justice Education">College of Criminal Justice Education</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="editPlace">From (Address/Origin):</label>
+                        <input type="text" id="editPlace" placeholder="e.g., City, Province" required>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editCourse">Course:</label>
+                            <input type="text" id="editCourse" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="editYear">Year Level:</label>
+                            <select id="editYear" required>
+                                <option value="">Select Year</option>
+                                <option value="1st">1st Year</option>
+                                <option value="2nd">2nd Year</option>
+                                <option value="3rd">3rd Year</option>
+                                <option value="4th">4th Year</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editIsIndigenous">INDIGENOUS PEOPLE:</label>
+                            <input type="checkbox" id="editIsIndigenous">
+                        </div>
+                        <div class="form-group">
+                            <label for="editIsPwd">PWD's:</label>
+                            <input type="checkbox" id="editIsPwd">
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeEditStudentModal()">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Update Student</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Student Registration Modal -->
     <div id="studentRegistrationModal" class="modal">
         <div class="modal-content student-registration-modal">
@@ -817,7 +883,7 @@
                         </div>
                     </div>
                     <div class="modal-actions">
-                        <button type="submit" class="btn btn-primary">Register Student</button>
+                        <button type="button" class="btn btn-primary" onclick="handleStudentRegistration(event)">Register Student</button>
                         <button type="button" class="btn btn-secondary" onclick="closeStudentRegistrationModal()">Cancel</button>
                     </div>
                 </form>
@@ -859,9 +925,7 @@
                                 <select id="grantesStatusFilter" onchange="filterGrantesByStatus()">
                                     <option value="">All Status</option>
                                     <option value="active">Active</option>
-                                    <option value="pending">Pending</option>
-                                    <option value="approved">Approved</option>
-                                    <option value="rejected">Rejected</option>
+                                    <option value="archived">Archived</option>
                                 </select>
                                 <select id="grantesYearFilter" onchange="filterGrantesByYear()">
                                     <option value="">All Years</option>
@@ -916,7 +980,30 @@
         </div>
     </div>
 
-    
+    <!-- Student Change Password Modal -->
+    <div id="studentChangePasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-key"></i> Change Your Password</h3>
+                <span class="close" onclick="closeStudentChangePasswordModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="selectedStudentInfoForPassword"></div>
+                <div class="form-group">
+                    <label for="studentNewPassword">New Password:</label>
+                    <input type="password" id="studentNewPassword" placeholder="Enter new password">
+                </div>
+                <div class="form-group">
+                    <label for="studentConfirmPassword">Confirm New Password:</label>
+                    <input type="password" id="studentConfirmPassword" placeholder="Confirm new password">
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-primary" onclick="changeOwnPassword()">Change Password</button>
+                    <button class="btn btn-secondary" onclick="closeStudentChangePasswordModal()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
         // Handle role change in login form
@@ -983,76 +1070,8 @@
             document.getElementById('studentRegistrationModal').style.display = 'none';
         }
 
-        function handleStudentRegistration(event) {
-            event.preventDefault();
-            
-            const formData = {
-                firstName: document.getElementById('adminFirstName').value,
-                lastName: document.getElementById('adminLastName').value,
-                studentId: document.getElementById('adminStudentIdInput').value,
-                email: document.getElementById('adminEmail').value,
-                awardNumber: document.getElementById('adminAwardNumber').value,
-                password: document.getElementById('adminPassword').value,
-                confirmPassword: document.getElementById('adminConfirmPassword').value,
-                course: document.getElementById('adminCourse').value,
-                year: document.getElementById('adminYear').value
-            };
-
-            // Validate passwords match
-            if (formData.password !== formData.confirmPassword) {
-                showNotification('Passwords do not match!', 'error');
-                return;
-            }
-
-            // Validate password strength
-            if (formData.password.length < 6) {
-                showNotification('Password must be at least 6 characters long!', 'error');
-                return;
-            }
-
-            // Check if student already exists (in a real app, this would be a server call)
-            const existingStudents = JSON.parse(localStorage.getItem('students') || '[]');
-            const existingStudent = existingStudents.find(s => 
-                s.studentId === formData.studentId || 
-                s.email === formData.email || 
-                s.awardNumber === formData.awardNumber
-            );
-
-            if (existingStudent) {
-                showNotification('Student with this ID, email, or award number already exists!', 'error');
-                return;
-            }
-
-            // Create student object
-            const newStudent = {
-                id: Date.now(),
-                firstName: formData.firstName,
-                lastName: formData.lastName,
-                studentId: formData.studentId,
-                email: formData.email,
-                awardNumber: formData.awardNumber,
-                password: formData.password, // In production, this should be hashed
-                course: formData.course,
-                year: formData.year,
-                status: 'active',
-                applicationStatus: 'none',
-                registeredDate: new Date().toISOString(),
-                isAdminCreated: true
-            };
-
-            // Save to localStorage (in production, this would be a server call)
-            existingStudents.push(newStudent);
-            localStorage.setItem('students', JSON.stringify(existingStudents));
-
-            // Update admin dashboard stats
-            updateAdminStats();
-
-            // Show success message
-            showNotification(`Student ${formData.firstName} ${formData.lastName} registered successfully! Award Number: ${formData.awardNumber}`, 'success');
-
-            // Close modal and reset form
-            closeStudentRegistrationModal();
-        }
+        // handleStudentRegistration moved to script.js for API integration
+        // This old localStorage version has been removed
 
         function showNotification(message, type = 'info') {
             const toast = document.getElementById('notificationToast');
@@ -1067,19 +1086,7 @@
             }, 5000);
         }
 
-        function updateAdminStats() {
-            const students = JSON.parse(localStorage.getItem('students') || '[]');
-            const totalStudents = students.length;
-            // As requested, Indigenous People count is fixed to 0
-            const approvedStudents = students.filter(s => s.isIndigenous).length;
-            const pendingStudents = students.filter(s => s.isPwd).length;
-            const archivedStudents = students.filter(s => s.status === 'archived').length;
-
-            document.getElementById('totalStudents').textContent = totalStudents;
-            document.getElementById('totalApproved').textContent = approvedStudents;
-            document.getElementById('totalPending').textContent = pendingStudents;
-            document.getElementById('totalArchived').textContent = archivedStudents;
-        }
+        // updateAdminStats function moved to script.js - now loads from database
 
         // GranTES List Functions
         function showGrantesList() {
@@ -1127,7 +1134,7 @@
                      data-course="${student.course}" 
                      data-year="${student.year}" 
                      data-department="${student.department || ''}"
-                     data-status="${student.applicationStatus || 'active'}"
+                     data-status="${student.status || 'active'}"
                      data-email="${student.email || ''}"
                      data-award="${student.awardNumber || ''}">
                     <div class="grantes-student-name">
@@ -1154,9 +1161,7 @@
 
         function getStatusText(status) {
             switch(status) {
-                case 'approved': return 'Approved';
-                case 'pending': return 'Pending';
-                case 'rejected': return 'Rejected';
+                case 'archived': return 'Archived';
                 default: return 'Active';
             }
         }
@@ -1176,7 +1181,7 @@
                     (student.department || '').toLowerCase().includes(searchTerm) ||
                     (student.year || '').toLowerCase().includes(searchTerm);
                 
-                const matchesStatus = !statusFilter || (student.applicationStatus || 'active') === statusFilter;
+                const matchesStatus = !statusFilter || (student.status || 'active') === statusFilter;
                 const matchesYear = !yearFilter || (student.year || '').toLowerCase().includes(yearFilter.toLowerCase());
                 
                 return matchesSearch && matchesStatus && matchesYear;
@@ -1201,8 +1206,8 @@
                         bValue = (b.course || '').toLowerCase();
                         break;
                     case 'status':
-                        aValue = (a.applicationStatus || 'active').toLowerCase();
-                        bValue = (b.applicationStatus || 'active').toLowerCase();
+                        aValue = (a.status || 'active').toLowerCase();
+                        bValue = (b.status || 'active').toLowerCase();
                         break;
                     default:
                         aValue = (a[field] || '').toString().toLowerCase();
@@ -1268,8 +1273,8 @@
                             <div><strong>Year:</strong> ${student.year || 'Not provided'}</div>
                             <div><strong>Department:</strong> ${student.department || 'Not provided'}</div>
                             <div><strong>Status:</strong> 
-                                <span class="grantes-student-status ${student.applicationStatus || 'active'}">
-                                    ${getStatusText(student.applicationStatus)}
+                                <span class="grantes-student-status ${student.status || 'active'}">
+                                    ${getStatusText(student.status)}
                                 </span>
                             </div>
                             <div><strong>Registration Date:</strong> ${student.registrationDate || 'Not available'}</div>
@@ -1278,7 +1283,7 @@
                 `;
                 
                 // You could show this in a modal or alert
-                alert(`Student Profile:\n\n${student.firstName} ${student.lastName}\nEmail: ${student.email || 'Not provided'}\nAward Number: ${student.awardNumber || 'Not provided'}\nCourse: ${student.course || 'Not provided'}\nYear: ${student.year || 'Not provided'}\nDepartment: ${student.department || 'Not provided'}\nStatus: ${getStatusText(student.applicationStatus)}`);
+                alert(`Student Profile:\n\n${student.firstName} ${student.lastName}\nEmail: ${student.email || 'Not provided'}\nAward Number: ${student.awardNumber || 'Not provided'}\nCourse: ${student.course || 'Not provided'}\nYear: ${student.year || 'Not provided'}\nDepartment: ${student.department || 'Not provided'}\nStatus: ${getStatusText(student.status)}`);
             } else {
                 showToast('Student not found', 'error');
             }
@@ -1317,9 +1322,6 @@
             }
         }
 
-        // Enhanced Admin Homepage Functions
-        let posts = JSON.parse(localStorage.getItem('adminPosts') || '[]');
-
         // Handle audience selection change
         function handleAudienceChange() {
             const audienceSelect = document.getElementById('postAudience');
@@ -1332,54 +1334,7 @@
             }
         }
 
-        // Handle post key press
-        function handlePostKeyPress(event) {
-            if (event.key === 'Enter') {
-                publishPost();
-            }
-        }
-
-        // Create post function
-        function createPost(type) {
-            const postInput = document.getElementById('postInput');
-            const audience = document.getElementById('postAudience').value;
-            const course = document.getElementById('postCourse').value;
-            
-            if (!postInput.value.trim()) {
-                showNotification('Please enter a message before posting', 'error');
-                return;
-            }
-
-            const newPost = {
-                id: Date.now(),
-                content: postInput.value,
-                type: type,
-                audience: audience,
-                course: course,
-                author: 'Administrator',
-                timestamp: new Date().toISOString(),
-                likes: 0,
-                comments: []
-            };
-
-            posts.unshift(newPost);
-            localStorage.setItem('adminPosts', JSON.stringify(posts));
-            
-            // Clear input
-            postInput.value = '';
-            document.getElementById('postAudience').value = 'students';
-            document.getElementById('postCourse').style.display = 'none';
-            
-            // Refresh posts feed
-            loadPostsFeed();
-            
-            showNotification('Post published successfully!', 'success');
-        }
-
-        // Publish post function
-        function publishPost() {
-            createPost('text');
-        }
+        // Post functions now use the ones from script.js that connect to database
 
         // loadPostsFeed function removed - using the one from script.js instead
 
@@ -1404,7 +1359,6 @@
             }
         });
     </script>
-    <script src="script.js"></script>
     
     <!-- Auto-expand textareas functionality -->
     <script>
@@ -1476,4 +1430,3 @@
     </script>
 </body>
 </html>
-
