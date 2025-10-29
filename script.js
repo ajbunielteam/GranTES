@@ -181,7 +181,7 @@ function updateNavigation() {
 }
 
 // Authentication Functions
-function handleRegister(event) {
+async function handleRegister(event) {
     event.preventDefault();
     
     const formData = {
@@ -202,94 +202,92 @@ function handleRegister(event) {
         return;
     }
     
-    // Check if email already exists
-    if (students.find(s => s.email === formData.email)) {
-        showToast('Email already registered', 'error');
-        return;
-    }
-    
-    // Check if student ID already exists
-    if (students.find(s => s.studentId === formData.studentId)) {
-        showToast('Student ID already registered', 'error');
-        return;
-    }
-    
-    // Create new student
-    const newStudent = {
-        id: students.length + 1,
+    // API call to register student
+    const response = await apiCall('register.php', 'POST', {
         firstName: formData.firstName,
         lastName: formData.lastName,
         studentId: formData.studentId,
         email: formData.email,
-        password: formData.password, // In real app, this should be hashed
+        password: formData.password,
         department: formData.department,
         course: formData.course,
-        year: formData.year,
-        status: 'active',
-        registrationDate: new Date().toISOString().split('T')[0],
-        applicationStatus: 'none'
-    };
+        year: formData.year
+    });
     
-    students.push(newStudent);
-    showToast('Registration successful! Please login.', 'success');
-    showLogin();
+    if (response.success) {
+        showToast('Registration successful! Please login.', 'success');
+        showLogin();
+    } else {
+        showToast(response.message || 'Registration failed', 'error');
+    }
 }
 
 // Home Feed: Render admin posts where audience === 'home' in Facebook-like cards
-function loadHomeFeed() {
+async function loadHomeFeed() {
     const feedEl = document.getElementById('homeFeed');
     if (!feedEl) return;
-    // Read from adminPosts; fallback to legacy 'posts' if present, then merge
-    const storedAdminPosts = JSON.parse(localStorage.getItem('adminPosts') || '[]');
-    const legacyPosts = JSON.parse(localStorage.getItem('posts') || '[]');
-    const allPosts = [...storedAdminPosts, ...legacyPosts];
-    // Accept both 'home' and 'Home Page' values (legacy), and be lenient on casing
-    const homePosts = allPosts.filter(p => {
-        if (!p) return false;
-        const audRaw = (p.audience == null ? '' : p.audience).toString().toLowerCase();
-        // Include posts with audience 'home'/'home page' or no audience (legacy)
-        return audRaw === '' || audRaw === 'home' || audRaw === 'home page';
-    }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    // Fallback: if no Home-specific posts, show latest recent posts so something appears
-    // Limit to 6 most recent posts for homepage
-    const postsToRender = (homePosts.length > 0 ? homePosts : allPosts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))).slice(0, 6);
-    if (postsToRender.length === 0) {
-        feedEl.innerHTML = `
-            <div class="welcome-message">
-                <h3>No public posts yet</h3>
-                <p>Announcements for the Home Page will appear here.</p>
-            </div>
-        `;
-        return;
-    }
-    feedEl.innerHTML = postsToRender.map(post => {
-        const aud = ((post && post.audience) ? post.audience.toString().toLowerCase() : '');
-        const badgeText = aud === 'students' ? 'GranTES Students' : 'Home Page';
-        const ts = post && post.timestamp ? post.timestamp : new Date().toISOString();
-        const author = (post && post.author) ? post.author : 'Administrator';
-        const content = (post && post.content) ? post.content : '';
-        const hasMulti = Array.isArray(post.images) && post.images.length > 1;
-        const hasSingle = !!post.image;
-        const isTextOnly = !hasMulti && !hasSingle;
-        if (isTextOnly) {
-            return `
+    
+    try {
+        // Get posts from database
+        const posts = await getPosts('home');
+        
+        // Filter posts for homepage (audience === 'home' or all students)
+        const homePosts = posts.filter(p => {
+            if (!p) return false;
+            const audRaw = (p.audience == null ? '' : p.audience).toString().toLowerCase();
+            // Include posts with audience 'home', 'students' (visible to all), or empty
+            return audRaw === 'home' || audRaw === 'students' || audRaw === '';
+        }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        
+        const postsToRender = homePosts.slice(0, 6);
+        
+        if (postsToRender.length === 0) {
+            feedEl.innerHTML = `
+                <div class="welcome-message">
+                    <h3>No public posts yet</h3>
+                    <p>Announcements for the Home Page will appear here.</p>
+                </div>
+            `;
+            return;
+        }
+        feedEl.innerHTML = postsToRender.map(post => {
+            const aud = ((post && post.audience) ? post.audience.toString().toLowerCase() : '');
+            const badgeText = aud === 'students' ? 'GranTES Students' : 'Home Page';
+            const ts = post && post.created_at ? post.created_at : (post.timestamp || new Date().toISOString());
+            const author = (post && post.author) ? post.author : 'Administrator';
+            const content = (post && post.content) ? post.content : '';
+            const hasMulti = Array.isArray(post.images) && post.images.length > 1;
+            const hasSingle = Array.isArray(post.images) && post.images.length === 1;
+            const isTextOnly = !hasMulti && !hasSingle;
+            
+            if (isTextOnly) {
+                return `
         <div class="post-card product-style text-only">
             <div class="post-content">
                 <div class="post-hero-text">${content}</div>
             </div>
         </div>`;
-        }
-        const imageFirst = (post.layout || 'image-left') === 'image-left';
-        const mediaHtml = (Array.isArray(post.images) && post.images.length > 1)
-            ? renderCarousel(post.images)
-            : (post.image ? `<div class=\"post-image\"><img src=\"${post.image}\" alt=\"post image\"></div>` : '');
-        const detailsHtml = `<div class=\"post-details\">\n                        <div class=\"post-text\">${content}</div>\n                        ${post.type === 'media' ? '<div class=\"post-media\"><i class=\"fas fa-image\"></i> Media attached</div>' : ''}\n                        ${post.type === 'live' ? '<div class=\"post-live\"><i class=\"fas fa-video\"></i> Live video</div>' : ''}\n                        ${post.type === 'feeling' ? '<div class=\"post-feeling\"><i class=\"fas fa-smile\"></i> Feeling/Activity</div>' : ''}\n                    </div>`;
-        return `
+            }
+            const imageFirst = (post.layout || 'image-left') === 'image-left';
+            const mediaHtml = (Array.isArray(post.images) && post.images.length > 1)
+                ? renderCarousel(post.images)
+                : (Array.isArray(post.images) && post.images.length === 1 ? `<div class="post-image"><img src="${post.images[0]}" alt="post image"></div>` : '');
+            const detailsHtml = `<div class=\"post-details\">\n                        <div class=\"post-text\">${content}</div>\n                        ${post.type === 'media' ? '<div class=\"post-media\"><i class=\"fas fa-image\"></i> Media attached</div>' : ''}\n                        ${post.type === 'live' ? '<div class=\"post-live\"><i class=\"fas fa-video\"></i> Live video</div>' : ''}\n                        ${post.type === 'feeling' ? '<div class=\"post-feeling\"><i class=\"fas fa-smile\"></i> Feeling/Activity</div>' : ''}\n                    </div>`;
+            return `
         <div class=\"post-card product-style\">\n            <div class=\"post-content\">\n                <div class=\"post-body ${imageFirst ? 'image-left' : 'image-right'}\">\n                    ${imageFirst ? `${mediaHtml}${detailsHtml}` : `${detailsHtml}${mediaHtml}`}
                 </div>
             </div>
         </div>`;
-    }).join('');
+        }).join('');
+    } catch (error) {
+        console.error('Error loading home feed:', error);
+        feedEl.innerHTML = `
+            <div class="welcome-message">
+                <h3>Error loading posts</h3>
+                <p>Please refresh the page.</p>
+            </div>
+        `;
+    }
 }
 
 // Ensure Home feed renders on initial page load
@@ -297,32 +295,66 @@ document.addEventListener('DOMContentLoaded', function() {
     try { loadHomeFeed(); } catch (_) { /* ignore */ }
 });
 
-function homeLikePost(postId) {
-    const allPosts = JSON.parse(localStorage.getItem('adminPosts') || '[]');
-    const post = allPosts.find(p => p.id === postId);
-    if (!post) return;
-    post.likes = (post.likes || 0) + 1;
-    localStorage.setItem('adminPosts', JSON.stringify(allPosts));
+async function homeLikePost(postId) {
+    try {
+        const response = await apiCall('update_post_engagement.php', 'POST', {
+            postId: postId,
+            action: 'like'
+        });
+        
+        if (response.success) {
     loadHomeFeed();
+            showToast('Post liked!', 'success');
+        } else {
+            showToast('Failed to like post', 'error');
+        }
+    } catch (error) {
+        console.error('Error toggling like:', error);
+        showToast('Failed to like post', 'error');
+    }
 }
 
 function homeCommentPost(postId) {
     const comment = prompt('Add a comment:');
     if (!comment || !comment.trim()) return;
-    const allPosts = JSON.parse(localStorage.getItem('adminPosts') || '[]');
-    const post = allPosts.find(p => p.id === postId);
-    if (!post) return;
-    if (!Array.isArray(post.comments)) post.comments = [];
-    post.comments.push({ id: Date.now(), author: 'Guest', content: comment.trim(), timestamp: new Date().toISOString() });
-    localStorage.setItem('adminPosts', JSON.stringify(allPosts));
-    loadHomeFeed();
+    
+    // For home page, just show a message
+    showToast('Please log in to comment', 'info');
 }
 
-function homeSharePost(postId) {
-    alert('Link copied for sharing!');
+async function homeSharePost(postId) {
+    try {
+        // Update shares count in database
+        const response = await apiCall('update_post_engagement.php', 'POST', {
+            postId: postId,
+            action: 'share'
+        });
+        
+        // Copy link to clipboard
+        const shareUrl = `${window.location.origin}${window.location.pathname}?post=${postId}`;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            showToast('Post link copied to clipboard!', 'success');
+        } catch (clipboardError) {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = shareUrl;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            showToast('Post link copied to clipboard!', 'success');
+        }
+        
+        // Refresh feed
+        loadHomeFeed();
+    } catch (error) {
+        console.error('Error sharing post:', error);
+        showToast('Failed to share post', 'error');
+    }
 }
 
-function handleLogin(event) {
+async function handleLogin(event) {
     event.preventDefault();
     
     const role = document.getElementById('loginRole').value;
@@ -330,99 +362,37 @@ function handleLogin(event) {
     const passwordRaw = document.getElementById('loginPassword').value;
     const email = (emailRaw || '').trim().toLowerCase();
     const password = (passwordRaw || '').trim();
+    const awardNumberRaw = document.getElementById('loginAwardNumber').value || '';
+    const identifier = awardNumberRaw.trim().toLowerCase() || email;
     
-    console.log('Login attempt:', { role, email, password });
+    console.log('Login attempt:', { role, email, password, identifier });
     
-    // First, accept admin credentials regardless of selected role to avoid UX issues
-    const adminCredentials = JSON.parse(localStorage.getItem('adminCredentials') || '{"email": "admin@grantes.com", "password": "admin123"}');
-    if ((email === adminCredentials.email || email === 'admin@grantes.local' || email === 'admin') && password === adminCredentials.password) {
-        currentUser = {
-            id: 'admin',
-            name: 'Administrator',
-            email: email,
-            role: 'admin'
-        };
-        if (!safeSetItem('currentUser', JSON.stringify(currentUser))) {
-            showToast('Storage is full. Logged in without saving session.', 'warning');
-        }
+    // API call to login
+    const response = await apiCall('login.php', 'POST', {
+        role: role,
+        email: email,
+        password: password,
+        identifier: identifier
+    });
+    
+    if (response.success) {
+        currentUser = response.user;
+        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+        
         if (document && document.body) {
             document.body.classList.add('logged-in');
-            document.body.classList.add('admin-logged-in');
-        } 
-        try { updateNavigation(); } catch (_) { /* ignore */ }
-        showToast('Login successful!', 'success');
-        showDashboard();
-        return;
-    }
-
-    if (role === 'admin') {
-        // Admin login using stored credentials
-        const adminCredentials = JSON.parse(localStorage.getItem('adminCredentials') || '{"email": "admin@grantes.com", "password": "admin123"}');
-        if ((email === adminCredentials.email || email === 'admin@grantes.local' || email === 'admin') && password === adminCredentials.password) {
-            currentUser = {
-                id: 'admin',
-                name: 'Administrator',
-                email: email,
-                role: 'admin'
-            };
-            localStorage.setItem('currentUser', JSON.stringify(currentUser));
-            if (document && document.body) {
-                document.body.classList.add('logged-in');
+            if (currentUser.role === 'admin') {
                 document.body.classList.add('admin-logged-in');
-            }
-            try { updateNavigation(); } catch (_) { /* ignore */ }
-            showToast('Login successful!', 'success');
-            showDashboard();
-        } else {
-            showToast('Invalid admin credentials', 'error');
-        }
-    } else if (role === 'student') {
-        // Student login - accept Award Number OR Student ID (in same input), or email
-        const identifierRaw = document.getElementById('loginAwardNumber').value || '';
-        const identifier = identifierRaw.trim().toLowerCase();
-        
-        // Load latest students from localStorage only (single source of truth)
-        const storedStudents = JSON.parse(localStorage.getItem('students') || '[]');
-        
-        const student = storedStudents.find(s => {
-            const sEmail = ((s.email || '').trim().toLowerCase());
-            const sAward = ((s.awardNumber || '').trim().toLowerCase());
-            const sStudentId = ((s.studentId || '').trim().toLowerCase());
-            const sPass = ((s.password || '').trim());
-            
-            const idMatches = identifier && (sAward === identifier || sStudentId === identifier);
-            const emailMatches = email && sEmail === email;
-            if (emailMatches || idMatches) {
-                return sPass === password;
-            }
-            return false;
-        });
-        
-        if (student) {
-            // Ensure student has a numeric id saved for downstream features
-            const ensured = ensureStudentHasId(student);
-            currentUser = {
-                id: ensured.id,
-                name: `${student.firstName} ${student.lastName}`,
-                email: student.email,
-                role: 'student',
-                studentData: ensured
-            };
-            if (!safeSetItem('currentUser', JSON.stringify(currentUser))) {
-                showToast('Storage is full. Logged in without saving session.', 'warning');
-            }
-            if (document && document.body) {
-                document.body.classList.add('logged-in');
+            } else {
                 document.body.classList.remove('admin-logged-in');
             }
-            try { updateNavigation(); } catch (_) { /* ignore */ }
-            showToast('Login successful!', 'success');
-            showDashboard();
-        } else {
-            showToast('Invalid credentials. Please check your award number/email and password.', 'error');
         }
+
+        updateNavigation();
+        showToast('Login successful!', 'success');
+        showDashboard();
     } else {
-        showToast('Please select a role and try again', 'error');
+        showToast(response.message || 'Login failed', 'error');
     }
 }
 
@@ -474,8 +444,12 @@ function logout() {
 function loadStudentHomepage() {
     const student = currentUser.studentData;
     
-    // Update header
-    document.getElementById('studentName').textContent = student.firstName + ' ' + student.lastName;
+    // Update header - handle both camelCase and snake_case formats
+    const firstName = student.firstName || student.first_name || '';
+    const lastName = student.lastName || student.last_name || '';
+    const fullName = firstName + ' ' + lastName;
+    
+    document.getElementById('studentName').textContent = fullName.trim() || 'Student';
     
     // Update notification count
     const studentNotifications = notifications.filter(n => n.studentId === student.id);
@@ -510,9 +484,12 @@ function loadStudentProfile() {
     const student = currentUser.studentData;
     
     const sideName = document.getElementById('profileName');
-    if (sideName) sideName.textContent = `${student.firstName} ${student.lastName}`;
+    const studentFirstName = student.firstName || student.first_name || '';
+    const studentLastName = student.lastName || student.last_name || '';
+    const studentIdValue = student.studentId || student.student_id || '';
+    if (sideName) sideName.textContent = `${studentFirstName} ${studentLastName}`;
     const sideId = document.getElementById('profileStudentId');
-    if (sideId) sideId.textContent = student.studentId;
+    if (sideId) sideId.textContent = studentIdValue;
     const sideEmail = document.getElementById('profileEmail');
     if (sideEmail) sideEmail.textContent = student.email;
     const sideCourse = document.getElementById('profileCourse');
@@ -535,9 +512,9 @@ function loadStudentProfile() {
 
     // Also populate main profile panel fields if present
     const nameMain = document.getElementById('profileNameMain');
-    if (nameMain) nameMain.textContent = `${student.firstName} ${student.lastName}`;
+    if (nameMain) nameMain.textContent = `${studentFirstName} ${studentLastName}`;
     const idMain = document.getElementById('profileStudentIdMain');
-    if (idMain) idMain.textContent = student.studentId;
+    if (idMain) idMain.textContent = studentIdValue;
     const emailMain = document.getElementById('profileEmailMain');
     if (emailMain) emailMain.textContent = student.email;
     const courseMain = document.getElementById('profileCourseMain');
@@ -563,12 +540,242 @@ function loadStudentProfile() {
     if (pwdMain) pwdMain.textContent = student.isPwd ? 'Yes' : 'No';
 }
 
-function loadStudentAnnouncements() {
-    const adminPosts = JSON.parse(localStorage.getItem('adminPosts') || '[]');
-    const container = document.getElementById('studentAnnouncementsFeed');
+// Load posts for student homepage feed
+async function loadStudentHomepagePosts() {
+    const container = document.getElementById('studentPostsFeed');
+    if (!container) return;
     
-    const studentScoped = adminPosts.filter(p => p && (p.audience === 'students' || !p.audience));
-    if (studentScoped.length === 0) {
+    try {
+        // Load posts from database with 'students' audience
+        const posts = await getPosts('students');
+        
+        if (!posts || posts.length === 0) {
+            container.innerHTML = `
+                <div class="welcome-message">
+                    <h3>Welcome to the Student Portal</h3>
+                    <p>Stay updated with announcements and communicate with the administration team.</p>
+                    <p style="margin-top: 1rem; color: #64748b;">No announcements yet.</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = posts.map(post => {
+            let imagesHtml = '';
+            
+            if (post.images) {
+                let imageArray = [];
+                
+                if (Array.isArray(post.images)) {
+                    imageArray = post.images;
+                } else if (typeof post.images === 'string') {
+                    try {
+                        const parsed = JSON.parse(post.images);
+                        imageArray = Array.isArray(parsed) ? parsed : [parsed];
+                    } catch (e) {
+                        imageArray = [post.images];
+                    }
+                } else if (post.images) {
+                    imageArray = [post.images];
+                }
+                
+                imageArray = imageArray.map(img => {
+                    if (typeof img === 'string' && img.trim().startsWith('[') && img.trim().endsWith(']')) {
+                        try {
+                            const parsed = JSON.parse(img);
+                            if (Array.isArray(parsed)) {
+                                return parsed[0];
+                            }
+                            return parsed;
+                        } catch (e) {
+                            return img;
+                        }
+                    }
+                    return img;
+                });
+                
+                imageArray = imageArray.filter(img => {
+                    return img && typeof img === 'string' && img.trim() !== '' && img.length > 10;
+                });
+                
+                if (imageArray.length === 1) {
+                    imagesHtml = `<div class="post-image-container"><img src="${imageArray[0]}" alt="Post image" class="post-image" style="max-width: 100%; border-radius: 8px; margin-top: 10px; display: block;"></div>`;
+                } else if (imageArray.length > 1) {
+                    imagesHtml = renderCarousel(imageArray);
+                }
+            }
+            
+            return `
+                <div class="post-item" data-post-id="${post.id}">
+                    <div class="post-header">
+                        <div class="post-author">
+                            <div class="post-avatar"><i class="fas fa-user-shield"></i></div>
+                            <div class="post-author-info">
+                                <span class="post-author-name">Administrator</span>
+                                <span class="post-time">${formatDate(post.created_at)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="post-content">
+                        <p>${post.content || ''}</p>
+                        ${imagesHtml}
+                    </div>
+                    <div class="post-engagement">
+                        <div class="post-reactions">
+                            <span class="reactions-count"><span class="count-num">${post.likes || 0}</span> <span class="count-label">likes</span></span>
+                            <span class="comments-count"><span class="count-num">${post.comments_count || 0}</span> <span class="count-label">comments</span></span>
+                        </div>
+                        <div class="post-actions">
+                            <button class="action-btn like-btn" onclick="studentToggleLike(${post.id})">
+                                <i class="fas fa-thumbs-up"></i>
+                                <span>Like</span>
+                            </button>
+                            <button class="action-btn comment-btn" onclick="studentToggleComments(${post.id})">
+                                <i class="fas fa-comment"></i>
+                                <span>Comment</span>
+                            </button>
+                        </div>
+                        <div id="student-comments-${post.id}" class="comments-section" style="display: none;">
+                            <div id="student-comments-list-${post.id}" data-loaded="false"></div>
+                            <div class="comment-input-container">
+                                <input type="text" placeholder="Write a comment..." id="studentCommentInput-${post.id}" class="comment-input" onkeypress="if(event.key==='Enter') studentCommentPost(${post.id})">
+                                <button onclick="studentCommentPost(${post.id})" class="comment-submit-btn">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+    } catch (error) {
+        console.error('Error loading student homepage posts:', error);
+        container.innerHTML = `
+            <div class="welcome-message">
+                <h3>Welcome to the Student Portal</h3>
+                <p>Error loading posts. Please try refreshing the page.</p>
+            </div>
+        `;
+    }
+}
+
+// Load posts for public home page
+async function loadHomeFeed() {
+    const container = document.getElementById('homeFeed');
+    if (!container) return;
+    
+    try {
+        // Load posts from database with 'home' audience
+        const posts = await getPosts('home');
+        
+        if (!posts || posts.length === 0) {
+            container.innerHTML = `
+                <div class="welcome-message">
+                    <p>No announcements yet. Check back soon for updates!</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = posts.map(post => {
+            let imagesHtml = '';
+            
+            if (post.images) {
+                let imageArray = [];
+                
+                if (Array.isArray(post.images)) {
+                    imageArray = post.images;
+                } else if (typeof post.images === 'string') {
+                    try {
+                        const parsed = JSON.parse(post.images);
+                        imageArray = Array.isArray(parsed) ? parsed : [parsed];
+                    } catch (e) {
+                        imageArray = [post.images];
+                    }
+                } else if (post.images) {
+                    imageArray = [post.images];
+                }
+                
+                imageArray = imageArray.map(img => {
+                    if (typeof img === 'string' && img.trim().startsWith('[') && img.trim().endsWith(']')) {
+                        try {
+                            const parsed = JSON.parse(img);
+                            if (Array.isArray(parsed)) {
+                                return parsed[0];
+                            }
+                            return parsed;
+                        } catch (e) {
+                            return img;
+                        }
+                    }
+                    return img;
+                });
+                
+                imageArray = imageArray.filter(img => {
+                    return img && typeof img === 'string' && img.trim() !== '' && img.length > 10;
+                });
+                
+                if (imageArray.length === 1) {
+                    imagesHtml = `<div class="post-image-container"><img src="${imageArray[0]}" alt="Post image" class="post-image" style="max-width: 100%; border-radius: 8px; margin-top: 10px; display: block;"></div>`;
+                } else if (imageArray.length > 1) {
+                    imagesHtml = renderCarousel(imageArray);
+                }
+            }
+            
+            return `
+                <div class="post-item" data-post-id="${post.id}">
+                    <div class="post-header">
+                        <div class="post-author">
+                            <div class="post-avatar"><i class="fas fa-user-shield"></i></div>
+                            <div class="post-author-info">
+                                <span class="post-author-name">Administrator</span>
+                                <span class="post-time">${formatDate(post.created_at)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="post-content">
+                        <p>${post.content || ''}</p>
+                        ${imagesHtml}
+                    </div>
+                    <div class="post-engagement">
+                        <div class="post-reactions">
+                            <span class="reactions-count"><span class="count-num">${post.likes || 0}</span> <span class="count-label">likes</span></span>
+                            <span class="comments-count"><span class="count-num">${post.comments_count || 0}</span> <span class="count-label">comments</span></span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+    } catch (error) {
+        console.error('Error loading home feed:', error);
+        container.innerHTML = `
+            <div class="welcome-message">
+                <p>Error loading posts. Please try refreshing the page.</p>
+            </div>
+        `;
+    }
+}
+
+async function loadStudentHomepage() {
+    // Load posts for student homepage
+    await loadStudentHomepagePosts();
+    // Load notifications
+    if (typeof loadStudentNotifications === 'function') {
+        loadStudentNotifications();
+    }
+}
+
+async function loadStudentAnnouncements() {
+    const container = document.getElementById('studentAnnouncementsFeed');
+    if (!container) return;
+    
+    try {
+        // Load posts from database with 'students' audience
+        const posts = await getPosts('students');
+        
+        if (!posts || posts.length === 0) {
         container.innerHTML = `
             <div class="no-posts">
                 <i class="fas fa-newspaper"></i>
@@ -579,14 +786,50 @@ function loadStudentAnnouncements() {
         return;
     }
 
-    container.innerHTML = studentScoped.map(post => {
-        const comments = JSON.parse(localStorage.getItem('studentComments') || '[]');
-        const postComments = comments.filter(comment => comment.postId === post.id);
-        const engagement = (post && post.engagement) ? post.engagement : { likes: [], comments: [], shares: [] };
-        const likeCount = Array.isArray(engagement.likes) ? engagement.likes.length : 0;
-        const likedByCurrent = (currentUser && currentUser.studentData)
-            ? (Array.isArray(engagement.likes) && engagement.likes.some(l => l && l.userId === currentUser.studentData.id))
-            : false;
+        container.innerHTML = posts.map(post => {
+            let imagesHtml = '';
+            
+            if (post.images) {
+                let imageArray = [];
+                
+                if (Array.isArray(post.images)) {
+                    imageArray = post.images;
+                } else if (typeof post.images === 'string') {
+                    try {
+                        const parsed = JSON.parse(post.images);
+                        imageArray = Array.isArray(parsed) ? parsed : [parsed];
+                    } catch (e) {
+                        imageArray = [post.images];
+                    }
+                } else if (post.images) {
+                    imageArray = [post.images];
+                }
+                
+                imageArray = imageArray.map(img => {
+                    if (typeof img === 'string' && img.trim().startsWith('[') && img.trim().endsWith(']')) {
+                        try {
+                            const parsed = JSON.parse(img);
+                            if (Array.isArray(parsed)) {
+                                return parsed[0];
+                            }
+                            return parsed;
+                        } catch (e) {
+                            return img;
+                        }
+                    }
+                    return img;
+                });
+                
+                imageArray = imageArray.filter(img => {
+                    return img && typeof img === 'string' && img.trim() !== '' && img.length > 10;
+                });
+                
+                if (imageArray.length === 1) {
+                    imagesHtml = `<div class="post-image-container"><img src="${imageArray[0]}" alt="Post image" class="post-image" style="max-width: 100%; border-radius: 8px; margin-top: 10px; display: block;"></div>`;
+                } else if (imageArray.length > 1) {
+                    imagesHtml = renderCarousel(imageArray);
+                }
+            }
         
         return `
             <div class="post-card">
@@ -595,94 +838,99 @@ function loadStudentAnnouncements() {
                         <i class="fas fa-user-shield"></i>
                     </div>
                     <div class="post-author-info">
-                        <h4>${post.author}</h4>
-                        <p>${formatDate(post.timestamp)}</p>
+                            <h4>Administrator</h4>
+                            <p>${formatDate(post.created_at)}</p>
                     </div>
                 </div>
                 <div class="post-content">
-                    ${Array.isArray(post.images) && post.images.length > 1 ? renderCarousel(post.images) : (post.image ? `<div class="post-image"><img src="${post.image}" alt="post image"></div>` : '')}
-                    <div class="post-text">${post.content}</div>
-                    ${post.type === 'media' ? '<div class="post-media"><i class="fas fa-image"></i> Media attached</div>' : ''}
-                    ${post.type === 'live' ? '<div class="post-live"><i class="fas fa-video"></i> Live video</div>' : ''}
-                    ${post.type === 'feeling' ? '<div class="post-feeling"><i class="fas fa-smile"></i> Feeling/Activity</div>' : ''}
+                        ${imagesHtml}
+                        <div class="post-text">${post.content || ''}</div>
                 </div>
                 <div class="post-actions">
-                    <button class="post-action-btn ${likedByCurrent ? 'liked' : ''}" onclick="togglePostLike(${post.id})">
+                        <button class="post-action-btn" onclick="studentToggleLike(${post.id})">
                         <i class="fas fa-heart"></i>
-                        <span>${likeCount}</span>
+                            <span>${post.likes || 0}</span>
                     </button>
-                    <button class="post-action-btn" onclick="toggleComments(${post.id})">
+                        <button class="post-action-btn" onclick="studentToggleComments(${post.id})">
                         <i class="fas fa-comment"></i>
-                        <span>${postComments.length}</span>
+                            <span>${post.comments_count || 0}</span>
                     </button>
                 </div>
-                <div class="comments-section" id="comments-${post.id}" style="display: none;">
+                    <div class="comments-section" id="student-comments-${post.id}" style="display: none;">
+                        <div id="student-comments-list-${post.id}" data-loaded="false"></div>
                     <div class="comment-form">
-                        <input type="text" class="comment-input" placeholder="Write a comment..." id="commentInput-${post.id}">
-                        <button class="comment-btn" onclick="addComment(${post.id})">Comment</button>
-                    </div>
-                    <div class="comments-list" id="commentsList-${post.id}">
-                        ${renderComments(postComments)}
+                            <input type="text" class="comment-input" placeholder="Write a comment..." id="studentCommentInput-${post.id}" onkeypress="if(event.key==='Enter') studentCommentPost(${post.id})">
+                            <button class="comment-btn" onclick="studentCommentPost(${post.id})">Comment</button>
                     </div>
                 </div>
             </div>
         `;
     }).join('');
+        
+        // Load comments for each post when they're opened
+        
+    } catch (error) {
+        console.error('Error loading student announcements:', error);
+        container.innerHTML = `
+            <div class="no-posts">
+                <i class="fas fa-exclamation-triangle"></i>
+                <h4>Error loading announcements</h4>
+                <p>Please try refreshing the page.</p>
+            </div>
+        `;
+    }
 }
 
-function loadStudentMessages() {
-    // Use shared chatMessages thread persisted in localStorage; migrate legacy records if present
-    loadPersistedChatMessages();
-    const student = currentUser.studentData;
-    try {
-        const legacy = JSON.parse(localStorage.getItem('studentMessages') || '[]');
-        if (Array.isArray(legacy) && legacy.some(m => m && m.studentId === student.id)) {
-            const existingKeys = new Set(chatMessages.map(m => `${m.studentId}|${m.timestamp}|${m.sender}|${m.text}`));
-            legacy.forEach(m => {
-                if (!m || m.studentId !== student.id) return;
-                const key = `${m.studentId}|${m.timestamp}|${m.sender}|${m.text}`;
-                if (!existingKeys.has(key)) {
-                    chatMessages.push({
-                        id: m.id || Date.now(),
-                        text: m.text || '',
-                        sender: m.sender || 'student',
-                        timestamp: m.timestamp || new Date().toISOString(),
-                        studentId: m.studentId
-                    });
-                }
-            });
-            persistChatMessages();
-        }
-    } catch (_) { /* ignore */ }
-
-    const studentThread = chatMessages.filter(m => m.studentId === student.id);
+async function loadStudentMessages() {
     const container = document.getElementById('studentChatMessages');
     if (!container) return;
-    if (studentThread.length === 0) {
+    
+    try {
+        // Load messages from database
+        const messages = await getMessages(
+            currentUser.studentData.id, 
+            'student', 
+            1, // Admin ID
+            'admin'
+        );
+        if (messages.length === 0) {
+            container.innerHTML = `
+                <div class="no-messages">
+                    <i class="fas fa-comments"></i>
+                    <h4>No messages yet</h4>
+                    <p>Start a conversation with the administration team.</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = messages.map(message => {
+            const isStudent = message.senderType === 'student';
+            const time = new Date(message.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            return `
+                <div class="message-item ${isStudent ? 'sent' : 'received'}">
+                    <div class="message-avatar">${isStudent ? 'S' : 'A'}</div>
+                    <div class="message-bubble">
+                        <div class="message-text">${message.content}</div>
+                        <div class="message-time">${time}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        container.scrollTop = container.scrollHeight;
+    } catch (error) {
+        console.error('Error loading messages:', error);
         container.innerHTML = `
             <div class="no-messages">
                 <i class="fas fa-comments"></i>
-                <h4>No messages yet</h4>
-                <p>Start a conversation with the administration team.</p>
+                <h4>Error loading messages</h4>
+                <p>Please try again later.</p>
             </div>
         `;
-        return;
     }
-    container.innerHTML = studentThread.map(message => {
-        const isStudent = message.sender !== 'admin';
-        const time = new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        return `
-            <div class="message-item ${isStudent ? 'sent' : 'received'}">
-                <div class="message-avatar">${isStudent ? 'S' : 'A'}</div>
-                <div class="message-bubble">
-                    <div class="message-text">${message.text || ''}</div>
-                    <div class="message-time">${time}</div>
-                </div>
-            </div>
-        `;
-    }).join('');
-    container.scrollTop = container.scrollHeight;
 }
+
 
 function loadStudentNotifications() {
     const container = document.getElementById('notificationsContainer');
@@ -741,7 +989,7 @@ function submitApplication(event) {
         documentType: combinedTypeLabels.join(' + '),
         fileName: representativeFileName,
         notes: notes,
-        status: 'pending',
+        status: 'submitted',
         submittedDate: new Date().toISOString().split('T')[0],
         reviewedDate: null,
         reviewerNotes: null,
@@ -770,10 +1018,9 @@ function submitApplication(event) {
     if (idPicture) processFileToDataUrl(idPicture, 0);
     if (cor) processFileToDataUrl(cor, idPicture ? 1 : 0);
     
-    // Update student status
+    // Update student status - application submitted
     const studentIndex = students.findIndex(s => s.id === currentUser.studentData.id);
-    students[studentIndex].applicationStatus = 'pending';
-    currentUser.studentData.applicationStatus = 'pending';
+    // Application status is now managed through the new process, not via pending/approved/rejected
     localStorage.setItem('currentUser', JSON.stringify(currentUser));
     
     // Add notification
@@ -798,37 +1045,155 @@ function submitApplication(event) {
 // (Removed legacy showStudentTab for #student-dashboard to avoid conflicts)
 
 // Admin Dashboard Functions
-function loadAdminDashboard() {
-    // Load students from localStorage as single source of truth
-    const storedStudents = JSON.parse(localStorage.getItem('students') || '[]');
-    students = storedStudents;
-    
-    // Update stats (map: Indigenous -> isIndigenous, PWD's -> isPwd)
-    document.getElementById('totalStudents').textContent = students.length;
-    document.getElementById('totalApproved').textContent = 
-        students.filter(s => s.isIndigenous).length;
-    document.getElementById('totalPending').textContent = 
-        students.filter(s => s.isPwd).length;
-    document.getElementById('totalArchived').textContent = 
-        students.filter(s => s.status === 'archived').length;
+async function loadAdminDashboard() {
+    console.log('🏠 loadAdminDashboard called');
     
     // Show admin homepage by default
     const adminHomepage = document.getElementById('admin-homepage');
     const tabContent = document.querySelector('.tab-content');
+    
+    if (adminHomepage) {
     adminHomepage.style.display = 'block';
+    }
+    if (tabContent) {
     tabContent.style.display = 'none';
+    }
+    
+    // Wait a bit to ensure DOM is ready
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Load students from database and update stats FIRST
+    console.log('📊 Updating admin stats...');
+    await updateAdminStats();
     
     // Load admin posts
+    if (typeof loadAdminPosts === 'function') {
     loadAdminPosts();
+    }
     
     // Load applications
+    if (typeof loadApplications === 'function') {
     loadApplications();
+    }
     
     // Load students
+    if (typeof loadStudents === 'function') {
     loadStudents();
+    }
     
     // Initialize chat
+    if (typeof initializeChat === 'function') {
     initializeChat();
+    }
+    
+    // Also update stats again after a short delay to ensure everything is loaded
+    setTimeout(async () => {
+        console.log('🔄 Refreshing stats after delay...');
+        await updateAdminStats();
+    }, 500);
+}
+
+// Update admin dashboard statistics from database
+async function updateAdminStats() {
+    console.log('🔄 updateAdminStats called');
+    
+    try {
+        // Get students from database
+        console.log('📡 Fetching students from database...');
+        const studentsFromDB = await getStudentsFromDatabase();
+        console.log('✅ Students fetched:', studentsFromDB ? studentsFromDB.length : 0, 'students');
+        
+        // Find the stat elements
+        const totalStudentsEl = document.getElementById('totalStudents');
+        const totalIndigenousEl = document.getElementById('totalIndigenous');
+        const totalPwdEl = document.getElementById('totalPwd');
+        const totalArchivedEl = document.getElementById('totalArchived');
+        
+        console.log('🔍 Element check:', {
+            totalStudents: !!totalStudentsEl,
+            totalIndigenous: !!totalIndigenousEl,
+            totalPwd: !!totalPwdEl,
+            totalArchived: !!totalArchivedEl
+        });
+        
+        if (!totalStudentsEl || !totalIndigenousEl || !totalPwdEl || !totalArchivedEl) {
+            console.error('❌ Stat elements not found!');
+            return;
+        }
+        
+        if (!studentsFromDB || studentsFromDB.length === 0) {
+            // Set all stats to 0 if no students
+            console.log('📊 No students found, setting all stats to 0');
+            totalStudentsEl.textContent = '0';
+            totalIndigenousEl.textContent = '0';
+            totalPwdEl.textContent = '0';
+            totalArchivedEl.textContent = '0';
+            return;
+        }
+        
+        // Calculate statistics
+        const totalStudents = studentsFromDB.length;
+        
+        // Check for indigenous students - handle multiple possible field names and values
+        const indigenousStudents = studentsFromDB.filter(s => {
+            const isIndigenous = s.isIndigenous === true || 
+                               s.isIndigenous === 1 || 
+                               s.isIndigenous === '1' ||
+                               s.is_indigenous === 1 || 
+                               s.is_indigenous === true ||
+                               s.is_indigenous === '1';
+            return isIndigenous;
+        }).length;
+        
+        // Check for PWD students
+        const pwdStudents = studentsFromDB.filter(s => {
+            const isPwd = s.isPwd === true || 
+                         s.isPwd === 1 || 
+                         s.isPwd === '1' ||
+                         s.is_pwd === 1 || 
+                         s.is_pwd === true ||
+                         s.is_pwd === '1';
+            return isPwd;
+        }).length;
+        
+        // Check for archived students
+        const archivedStudents = studentsFromDB.filter(s => {
+            const status = s.status || s.student_status || 'active';
+            return status.toLowerCase() === 'archived';
+        }).length;
+        
+        // Update the display
+        totalStudentsEl.textContent = totalStudents;
+        totalIndigenousEl.textContent = indigenousStudents;
+        totalPwdEl.textContent = pwdStudents;
+        totalArchivedEl.textContent = archivedStudents;
+        
+        console.log('✅ Admin stats updated:', {
+            totalStudents,
+            indigenousStudents,
+            pwdStudents,
+            archivedStudents
+        });
+        
+    } catch (error) {
+        console.error('❌ Error updating admin stats:', error);
+        console.error('Error details:', error.stack);
+        
+        // Set to 0 on error and show error message
+        const elements = ['totalStudents', 'totalIndigenous', 'totalPwd', 'totalArchived'];
+        elements.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.textContent = '0';
+                el.style.color = '#ef4444'; // Red color to indicate error
+            }
+        });
+        
+        // Try to show error toast if available
+        if (typeof showToast === 'function') {
+            showToast('Failed to load statistics. Please refresh the page.', 'error');
+        }
+    }
 }
 
 function loadApplications() {
@@ -867,10 +1232,7 @@ function loadApplications() {
                     </div>
                 </div>
                 <div class="application-actions">
-                    ${app.status === 'pending' ? 
-                        `<button class="btn btn-primary" onclick="reviewApplication(${app.id})">Review</button>` : 
-                        `<button class="btn btn-secondary" onclick="viewApplicationDetails(${app.id})">View Details</button>`
-                    }
+                    <button class="btn btn-secondary" onclick="viewApplicationDetails(${app.id})">View Details</button>
                 </div>
             </div>
         `;
@@ -1006,9 +1368,8 @@ function loadReports() {
     
     if (applicationChart && trendChart) {
         drawSimpleChart(applicationChart, {
-            approved: students.filter(s => s.applicationStatus === 'approved').length,
-            pending: students.filter(s => s.applicationStatus === 'pending').length,
-            rejected: students.filter(s => s.applicationStatus === 'rejected').length
+            active: students.filter(s => (s.status || 'active') === 'active').length,
+            archived: students.filter(s => s.status === 'archived').length
         });
         
         drawSimpleChart(trendChart, {
@@ -1054,6 +1415,8 @@ function loadReports() {
 }
 
     // Place (From) analysis (counts and percentage summary)
+    const placeChart = document.getElementById('placeChart');
+    const placeSummary = document.getElementById('placeSummary');
     if (placeChart && placeSummary) {
         const storedStudents = JSON.parse(localStorage.getItem('students') || '[]');
         const placeCounts = storedStudents.reduce((acc, s) => {
@@ -1202,38 +1565,11 @@ function reviewApplication(applicationId) {
         </div>
     `;
     
-    document.getElementById('reviewModal').style.display = 'block';
+    // reviewModal removed - using viewApplicationDetails instead
+    viewApplicationDetails(application.id);
 }
 
-function updateApplicationStatus(status) {
-    if (!currentApplicationId) return;
-    
-    const applicationIndex = applications.findIndex(a => a.id === currentApplicationId);
-    const studentIndex = students.findIndex(s => s.id === applications[applicationIndex].studentId);
-    
-    // Update application
-    applications[applicationIndex].status = status;
-    applications[applicationIndex].reviewedDate = new Date().toISOString().split('T')[0];
-    applications[applicationIndex].reviewerNotes = status === 'approved' ? 'Application approved' : 'Application rejected';
-    
-    // Update student status
-    students[studentIndex].applicationStatus = status;
-    
-    // Add notification
-    const student = students[studentIndex];
-    addNotification(student.id, 
-        status === 'approved' ? 'Application Approved' : 'Application Rejected',
-        status === 'approved' ? 
-            'Congratulations! Your subsidy application has been approved.' :
-            'Your subsidy application has been rejected. Please contact the office for more information.'
-    );
-    
-    closeModal();
-    loadApplications();
-    loadAdminDashboard(); // Refresh stats
-    
-    showToast(`Application ${status} successfully!`, 'success');
-}
+// updateApplicationStatus function removed - approval/rejection process has been replaced
 
 function viewApplicationDetails(applicationId) {
     const application = applications.find(a => a.id === applicationId);
@@ -1295,12 +1631,12 @@ function closeStudentProfileModal() {
     if (modal) modal.style.display = 'none';
 }
 
-function renderAdminStudentChat() {
+async function renderAdminStudentChat() {
     const container = document.getElementById('adminStudentChatMessages');
     if (!container) return;
     container.innerHTML = '';
-    const thread = chatMessages.filter(m => m.studentId === adminActiveChatStudentId);
-    if (thread.length === 0) {
+    
+    if (!adminActiveChatStudentId) {
         container.innerHTML = `
             <div class="chat-welcome">
                 <div class="welcome-message">
@@ -1312,8 +1648,57 @@ function renderAdminStudentChat() {
         `;
         return;
     }
-    thread.forEach(m => addMessageToAdminChat(container, m));
-    container.scrollTop = container.scrollHeight;
+    
+    try {
+        // Load messages from database - Admin (ID=1) chatting with this student
+        const messages = await getMessages(
+            1, // Admin ID
+            'admin',
+            adminActiveChatStudentId,
+            'student'
+        );
+        
+        if (messages.length === 0) {
+            container.innerHTML = `
+                <div class="chat-welcome">
+                    <div class="welcome-message">
+                        <i class="fas fa-comments"></i>
+                        <h5>Start chatting</h5>
+                        <p>Your messages will appear here.</p>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        messages.forEach(message => {
+            const messageDiv = document.createElement('div');
+            const isAdmin = message.senderType === 'admin';
+            messageDiv.className = `profile-message ${isAdmin ? 'sent' : 'received'}`;
+            const time = new Date(message.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            messageDiv.innerHTML = `
+                <div class="profile-message-avatar">${isAdmin ? 'A' : 'S'}</div>
+                <div class="profile-message-content">
+                    <div>${message.content || ''}</div>
+                    <div class="profile-message-time">${time}</div>
+                </div>
+            `;
+            container.appendChild(messageDiv);
+        });
+        
+        container.scrollTop = container.scrollHeight;
+    } catch (error) {
+        console.error('Error loading admin chat:', error);
+        container.innerHTML = `
+            <div class="chat-welcome">
+                <div class="welcome-message">
+                    <i class="fas fa-comments"></i>
+                    <h5>Error loading messages</h5>
+                    <p>Please refresh the page.</p>
+                </div>
+            </div>
+        `;
+    }
 }
 
 function addMessageToAdminChat(container, message) {
@@ -1332,30 +1717,38 @@ function addMessageToAdminChat(container, message) {
     persistChatMessages();
 }
 
-function adminSendChatMessage() {
+async function adminSendChatMessage() {
     const input = document.getElementById('adminStudentChatInput');
     if (!input) return;
     const text = input.value.trim();
     if (!text || !adminActiveChatStudentId) return;
-    const msg = {
-        id: Date.now(),
-        text,
-        sender: 'admin',
-        timestamp: new Date().toISOString(),
-        studentId: adminActiveChatStudentId
-    };
-    chatMessages.push(msg);
-    persistChatMessages();
     
-    // Add notification for student
-    addNotification(adminActiveChatStudentId, 'New Message from Admin', text);
-    
-    renderAdminStudentChat();
-    input.value = '';
-    
-    // Update student's profile chat if they're viewing it
-    if (currentUser && currentUser.role === 'student' && currentUser.studentData.id === adminActiveChatStudentId) {
-        loadProfileChatMessages();
+    try {
+        // Save message to database
+        await saveMessage({
+            senderId: 1, // Admin ID
+            receiverId: adminActiveChatStudentId,
+            senderType: 'admin',
+            receiverType: 'student',
+            content: text,
+            attachment: null,
+            attachmentName: null
+        });
+        
+        // Add notification for student
+        addNotification(adminActiveChatStudentId, 'New Message from Admin', text);
+        
+        // Reload chat to show the new message
+        await renderAdminStudentChat();
+        input.value = '';
+        
+        // Update student's profile chat if they're viewing it
+        if (currentUser && currentUser.role === 'student' && currentUser.studentData.id === adminActiveChatStudentId) {
+            loadProfileChatMessages();
+        }
+    } catch (error) {
+        console.error('Error sending message:', error);
+        showToast('Failed to send message', 'error');
     }
 }
 
@@ -1488,9 +1881,249 @@ function updateSettings() {
     showToast('Settings updated successfully!', 'success');
 }
 
-function generateReport() {
-    // In a real app, this would generate a PDF or Excel report
-    showToast('Report generated successfully!', 'success');
+async function generateReport() {
+    try {
+        console.log('📄 Generating Excel report...');
+        
+        // Check if XLSX library is loaded
+        if (typeof XLSX === 'undefined') {
+            showToast('Excel library not loaded. Please refresh the page.', 'error');
+            return;
+        }
+        
+        // Fetch students from database
+        const studentsArr = await getStudentsFromDatabase();
+        
+        if (!studentsArr || studentsArr.length === 0) {
+            showToast('No student data available to generate report.', 'warning');
+            return;
+        }
+        
+        // Calculate statistics
+        const totalStudents = studentsArr.length;
+        const indigenousStudents = studentsArr.filter(s => 
+            s.isIndigenous === true || s.isIndigenous === 1 || s.is_indigenous === 1 || s.is_indigenous === true
+        ).length;
+        const pwdStudents = studentsArr.filter(s => 
+            s.isPwd === true || s.isPwd === 1 || s.is_pwd === 1 || s.is_pwd === true
+        ).length;
+        const archivedStudents = studentsArr.filter(s => {
+            const status = s.status || s.student_status || 'active';
+            return status.toLowerCase() === 'archived';
+        }).length;
+        
+        // Department breakdown
+        const deptCounts = studentsArr.reduce((acc, s) => {
+            const d = (s && s.department && s.department.trim()) ? s.department.trim() : 'Unspecified';
+            acc[d] = (acc[d] || 0) + 1;
+            return acc;
+        }, {});
+        
+        // Place/Origin breakdown - normalize city names to group same cities
+        const normalizeCityName = (place) => {
+            if (!place || !place.trim()) return 'Unspecified';
+            
+            let normalized = place.trim();
+            normalized = normalized.toLowerCase();
+            normalized = normalized.replace(/\s+(city|town|municipality|municipal|province|prov)$/i, '');
+            const parts = normalized.split(',');
+            if (parts.length > 1) {
+                normalized = parts[0].trim();
+            }
+            return normalized.split(' ').map(word => 
+                word.charAt(0).toUpperCase() + word.slice(1)
+            ).join(' ');
+        };
+        
+        const getDisplayName = (place, normalized) => {
+            if (!place || !place.trim()) return 'Unspecified';
+            const parts = place.trim().split(',');
+            return parts[0].trim() || normalized || 'Unspecified';
+        };
+        
+        const placeGroups = {};
+        studentsArr.forEach(s => {
+            const originalPlace = (s && s.place && s.place.trim()) ? s.place.trim() : '';
+            const normalized = normalizeCityName(originalPlace);
+            const displayName = getDisplayName(originalPlace, normalized);
+            
+            if (!placeGroups[normalized]) {
+                placeGroups[normalized] = {
+                    count: 0,
+                    displayName: displayName
+                };
+            }
+            placeGroups[normalized].count++;
+        });
+        
+        const placeCounts = {};
+        Object.keys(placeGroups).forEach(normalized => {
+            const group = placeGroups[normalized];
+            placeCounts[group.displayName] = group.count;
+        });
+        
+        // Course breakdown
+        const courseCounts = studentsArr.reduce((acc, s) => {
+            const c = (s && s.course && s.course.trim()) ? s.course.trim() : 'Unspecified';
+            acc[c] = (acc[c] || 0) + 1;
+            return acc;
+        }, {});
+        
+        // Year level breakdown
+        const yearCounts = studentsArr.reduce((acc, s) => {
+            const y = (s && s.year && s.year.trim()) || (s && s.yearLevel && s.yearLevel.trim()) ? 
+                      (s.year || s.yearLevel).trim() : 'Unspecified';
+            acc[y] = (acc[y] || 0) + 1;
+            return acc;
+        }, {});
+        
+        const reportDate = new Date().toLocaleString();
+        const reportDateShort = new Date().toISOString().split('T')[0];
+        
+        // Create workbook
+        const wb = XLSX.utils.book_new();
+        
+        // Sheet 1: Summary Statistics
+        const summaryData = [
+            ['GRANTES SMART SUBSIDY MANAGEMENT SYSTEM'],
+            ['STUDENT ANALYTICS REPORT'],
+            ['Generated: ' + reportDate],
+            [''], // Empty row
+            ['SUMMARY STATISTICS'],
+            ['', ''],
+            ['Total Students', totalStudents],
+            ['Indigenous People', indigenousStudents],
+            ["PWD's", pwdStudents],
+            ['Archived Students', archivedStudents],
+            ['Active Students', totalStudents - archivedStudents]
+        ];
+        const ws1 = XLSX.utils.aoa_to_sheet(summaryData);
+        ws1['!cols'] = [{ wch: 25 }, { wch: 15 }];
+        XLSX.utils.book_append_sheet(wb, ws1, 'Summary');
+        
+        // Sheet 2: Department Breakdown
+        const deptData = [
+            ['DEPARTMENT BREAKDOWN'],
+            ['', ''],
+            ['Department', 'Count', 'Percentage']
+        ];
+        Object.entries(deptCounts)
+            .sort((a, b) => b[1] - a[1])
+            .forEach(([dept, count]) => {
+                const pct = ((count / totalStudents) * 100).toFixed(1);
+                deptData.push([dept, count, pct + '%']);
+            });
+        const ws2 = XLSX.utils.aoa_to_sheet(deptData);
+        ws2['!cols'] = [{ wch: 40 }, { wch: 10 }, { wch: 12 }];
+        XLSX.utils.book_append_sheet(wb, ws2, 'Departments');
+        
+        // Sheet 3: Origin/Place Breakdown
+        const placeData = [
+            ['ORIGIN/PLACE BREAKDOWN'],
+            ['', ''],
+            ['Place/Origin', 'Count', 'Percentage']
+        ];
+        Object.entries(placeCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 50) // Top 50
+            .forEach(([place, count]) => {
+                const pct = ((count / totalStudents) * 100).toFixed(1);
+                placeData.push([place || 'Unspecified', count, pct + '%']);
+            });
+        const ws3 = XLSX.utils.aoa_to_sheet(placeData);
+        ws3['!cols'] = [{ wch: 30 }, { wch: 10 }, { wch: 12 }];
+        XLSX.utils.book_append_sheet(wb, ws3, 'Origins');
+        
+        // Sheet 4: Course Breakdown
+        const courseData = [
+            ['COURSE BREAKDOWN'],
+            ['', ''],
+            ['Course', 'Count', 'Percentage']
+        ];
+        Object.entries(courseCounts)
+            .sort((a, b) => b[1] - a[1])
+            .forEach(([course, count]) => {
+                const pct = ((count / totalStudents) * 100).toFixed(1);
+                courseData.push([course || 'Unspecified', count, pct + '%']);
+            });
+        const ws4 = XLSX.utils.aoa_to_sheet(courseData);
+        ws4['!cols'] = [{ wch: 30 }, { wch: 10 }, { wch: 12 }];
+        XLSX.utils.book_append_sheet(wb, ws4, 'Courses');
+        
+        // Sheet 5: Year Level Breakdown
+        const yearData = [
+            ['YEAR LEVEL BREAKDOWN'],
+            ['', ''],
+            ['Year Level', 'Count', 'Percentage']
+        ];
+        Object.entries(yearCounts)
+            .sort((a, b) => {
+                const order = {'1st': 1, '2nd': 2, '3rd': 3, '4th': 4};
+                return (order[a[0]] || 99) - (order[b[0]] || 99);
+            })
+            .forEach(([year, count]) => {
+                const pct = ((count / totalStudents) * 100).toFixed(1);
+                yearData.push([year + ' Year', count, pct + '%']);
+            });
+        const ws5 = XLSX.utils.aoa_to_sheet(yearData);
+        ws5['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 12 }];
+        XLSX.utils.book_append_sheet(wb, ws5, 'Year Levels');
+        
+        // Sheet 6: Student List (Main Data Sheet)
+        const studentData = [
+            ['STUDENT LIST'],
+            ['', ''],
+            ['#', 'First Name', 'Last Name', 'Student ID', 'Email', 'Department', 'Course', 'Year Level', 'Place/Origin', 'Indigenous', "PWD's", 'Status', 'Award Number']
+        ];
+        studentsArr.forEach((s, idx) => {
+            studentData.push([
+                idx + 1,
+                s.firstName || '',
+                s.lastName || '',
+                s.studentId || 'N/A',
+                s.email || 'N/A',
+                s.department || 'N/A',
+                s.course || 'N/A',
+                s.year || s.yearLevel || 'N/A',
+                s.place || s.from || s.origin || 'N/A',
+                (s.isIndigenous || s.is_indigenous) ? 'Yes' : 'No',
+                (s.isPwd || s.is_pwd) ? 'Yes' : 'No',
+                s.status || s.student_status || 'active',
+                s.awardNumber || s.award_number || 'N/A'
+            ]);
+        });
+        const ws6 = XLSX.utils.aoa_to_sheet(studentData);
+        // Set column widths
+        ws6['!cols'] = [
+            { wch: 5 },   // #
+            { wch: 15 },  // First Name
+            { wch: 15 },  // Last Name
+            { wch: 12 },  // Student ID
+            { wch: 25 },  // Email
+            { wch: 35 },  // Department
+            { wch: 15 },  // Course
+            { wch: 12 },  // Year Level
+            { wch: 20 },  // Place/Origin
+            { wch: 12 },  // Indigenous
+            { wch: 10 },  // PWD's
+            { wch: 12 },  // Status
+            { wch: 15 }   // Award Number
+        ];
+        // Freeze header row
+        ws6['!freeze'] = { x: 0, y: 2 };
+        XLSX.utils.book_append_sheet(wb, ws6, 'Student List');
+        
+        // Generate Excel file and download
+        const fileName = `grantes_report_${reportDateShort}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+        
+        showToast('Excel report generated and downloaded successfully!', 'success');
+        console.log('✅ Excel report generated successfully:', fileName);
+        
+    } catch (error) {
+        console.error('❌ Error generating Excel report:', error);
+        showToast('Failed to generate Excel report: ' + error.message, 'error');
+    }
 }
 
 // Notification Functions
@@ -1739,20 +2372,28 @@ function sendMessageToStudent(studentId) {
 function initializeChat() {
     if (currentUser) {
         // Show chat toggle for logged in users
-        document.getElementById('chatToggle').style.display = 'flex';
+        const chatToggle = document.getElementById('chatToggle');
+        if (chatToggle) {
+            chatToggle.style.display = 'flex';
+        }
         
         // Set appropriate chat header based on user role
         const chatUserName = document.getElementById('chatUserName');
-        if (currentUser.role === 'admin') {
-            chatUserName.textContent = 'Student Support';
-        } else {
-            chatUserName.textContent = 'Admin Support';
+        if (chatUserName) {
+            if (currentUser.role === 'admin') {
+                chatUserName.textContent = 'Student Support';
+            } else {
+                chatUserName.textContent = 'Admin Support';
+            }
         }
         
         // Initialize profile chat
         initializeProfileChat();
     } else {
-        document.getElementById('chatToggle').style.display = 'none';
+        const chatToggle = document.getElementById('chatToggle');
+        if (chatToggle) {
+            chatToggle.style.display = 'none';
+        }
     }
 }
 
@@ -1961,7 +2602,9 @@ function scrollProfileChatToBottom() {
 }
 
 // Admin Posting Functions
-function createPost(type) {
+async function createPost(type) {
+    console.log('🔵 createPost called with type:', type);
+    
     const postInput = document.getElementById('postInput');
     const content = (postInput && postInput.value ? postInput.value.trim() : '').toString();
     const audienceSelect = document.getElementById('postAudience');
@@ -1974,62 +2617,90 @@ function createPost(type) {
     const layout = layoutSelect ? layoutSelect.value : 'image-left';
     
     if (window.__postingInProgress) {
+        console.log('⚠️ Post already in progress, skipping...');
         return; // prevent double submissions
     }
     window.__postingInProgress = true;
     const finish = () => { window.__postingInProgress = false; };
     
-    // Require either text or at least one image (except special 'feeling' type)
-    if (!content && imageList.length === 0 && type !== 'feeling') {
+    // Require either text or at least one image (except special 'feeling' and 'live' types)
+    if (!content && imageList.length === 0 && type !== 'feeling' && type !== 'live') {
         showToast('Please enter text or add at least one image', 'error');
         finish();
         return;
     }
     
-    // Load existing posts from localStorage (single source of truth)
-    const allPosts = JSON.parse(localStorage.getItem('adminPosts') || '[]');
+    // Special handling for 'live' video posts
+    if (type === 'live') {
+        // Prompt for live video URL or just post announcement
+        if (!content) {
+            content = '🔴 Starting live video session...';
+        }
+        // You can extend this to request camera access
+        // navigator.mediaDevices.getUserMedia({ video: true })
+    }
     
-    const newPost = {
-        id: Date.now(),
-        author: 'Administrator',
+    // Special handling for 'feeling' posts
+    if (type === 'feeling') {
+        console.log('😊 Processing feeling post...');
+        // Allow posting feelings/activities without content requirement
+        if (!content) {
+            content = '😊 Sharing my feeling/activity';
+            console.log('📝 Set default content for feeling post');
+        }
+        console.log('📄 Content for feeling post:', content);
+    }
+    
+    // Prepare post data for database
+    const postData = {
         content: content || '',
         type: type,
-        audience: audience, // 'students' or 'home' (and possibly 'specific')
+        audience: audience,
         course: audience === 'specific' ? course : null,
-        image: imageDataUrl,
-        images: imageList,
         layout: layout,
-        timestamp: new Date().toISOString(),
-        likes: 0,
-        comments: [],
-        shares: 0,
-        liked: false
+        images: imageList.length > 0 ? imageList : null
     };
     
+
     try {
-        allPosts.unshift(newPost);
-        localStorage.setItem('adminPosts', JSON.stringify(allPosts));
-    } catch (e) {
-        showToast('Post is too large to save. Try fewer/smaller images.', 'error');
+        console.log('Post data being sent:', postData);
+        console.log('Images in postData:', postData.images);
+        
+        // Save to database using API
+        const response = await savePost(postData);
+        
+        console.log('API Response:', response);
+        console.log('Response debug:', response?.debug);
+        
+        if (!response || !response.success) {
+            showToast('Failed to save post to database', 'error');
+            finish();
+            return;
+        }
+        
+        // Reset inputs
+        if (postInput) postInput.value = '';
+        if (audienceSelect) audienceSelect.value = 'students';
+        if (courseSelect) courseSelect.style.display = 'none';
+        const layoutSelectReset = document.getElementById('postLayout');
+        if (layoutSelectReset) layoutSelectReset.value = 'image-left';
+        clearPostImage();
+        
+        // Refresh feeds
+        await loadAdminPosts();
+        // If on Home, refresh Home feed too
+        if (document.getElementById('home') && document.getElementById('home').classList.contains('active')) {
+            if (typeof loadHomeFeed === 'function') loadHomeFeed();
+        }
+        showToast('Post created successfully!', 'success');
+        console.log('✅ Post created and page refreshed');
+    } catch (error) {
+        console.error('❌ Error saving post:', error);
+        console.error('Error details:', error.message, error.stack);
+        showToast('Failed to save post: ' + error.message, 'error');
+    } finally {
         finish();
-        return;
     }
-    
-    // Reset inputs
-    if (postInput) postInput.value = '';
-    if (audienceSelect) audienceSelect.value = 'students';
-    if (courseSelect) courseSelect.style.display = 'none';
-    const layoutSelectReset = document.getElementById('postLayout');
-    if (layoutSelectReset) layoutSelectReset.value = 'image-left';
-    clearPostImage();
-    
-    loadAdminPosts();
-    // If on Home, refresh Home feed too
-    if (document.getElementById('home') && document.getElementById('home').classList.contains('active')) {
-        if (typeof loadHomeFeed === 'function') loadHomeFeed();
-    }
-    showToast('Post created successfully!', 'success');
-    finish();
 }
 
 // Ensure Publish button uses unified createPost logic
@@ -2130,113 +2801,290 @@ function clearPostImage() {
     if (count) { count.style.display = 'none'; }
 }
 
-function loadAdminPosts() {
-    const postsFeed = document.getElementById('postsFeed');
-    if (!postsFeed) return;
-    const allPosts = JSON.parse(localStorage.getItem('adminPosts') || '[]');
+async function publishPost() {
+    const postInput = document.getElementById('postInput');
+    const content = postInput.value.trim();
+    const audience = document.getElementById('postAudience').value;
+    const course = document.getElementById('postCourse').value;
+    const layout = document.getElementById('postLayout').value;
     
-    // Test: Show alert to confirm function is called
-    console.log('loadAdminPosts called, posts count:', allPosts.length);
-    
-    if (allPosts.length === 0) {
-        postsFeed.innerHTML = `
-            <div class="welcome-message">
-                <h3>Welcome to the Admin Dashboard</h3>
-                <p>Manage student applications, view reports, and configure system settings from this central location.</p>
-            </div>
-        `;
+    if (!content) {
+        showToast('Please enter a message before posting', 'error');
         return;
     }
     
-    postsFeed.innerHTML = allPosts.map(post => {
-        const studentComments = JSON.parse(localStorage.getItem('studentComments') || '[]');
-        const postComments = studentComments.filter(c => c && c.postId === post.id);
-        const likesCount = (post && post.engagement && Array.isArray(post.engagement.likes)) ? post.engagement.likes.length : (post.likes || 0);
+    // Check if there's an image preview
+    const imagePreview = document.getElementById('postImagePreview');
+    let images = null;
+    
+    if (imagePreview && imagePreview.style.display !== 'none') {
+        const imgSrc = document.getElementById('postImagePreviewImg')?.src;
+        if (imgSrc) {
+            images = [imgSrc];
+        }
+    }
+    
+    const postData = {
+        content: content,
+        type: 'text',
+        audience: audience,
+        course: course || null,
+        layout: layout,
+        images: images
+    };
+    
+    // Save to database
+    const response = await savePost(postData);
+    
+    if (response) {
+        // Clear input and preview
+        postInput.value = '';
+        clearPostImage();
         
-        // Test: Log image data
-        console.log('Post', post.id, 'has image:', !!post.image, 'has images:', Array.isArray(post.images));
+        // Refresh posts feed
+        await loadAdminPosts();
+        // Also refresh home feed if posts are for home audience
+        if (postData.audience === 'home') {
+            try {
+                await loadHomeFeed();
+            } catch (e) {
+                // Ignore if not on home page
+            }
+        }
+        // Also refresh student feeds if posts are for students audience
+        if (postData.audience === 'students') {
+            try {
+                await loadStudentHomepagePosts();
+                await loadStudentAnnouncements();
+            } catch (e) {
+                // Ignore if not on student page
+            }
+        }
+    }
+}
 
+async function toggleLike(postId) {
+    try {
+        const response = await apiCall('update_post_engagement.php', 'POST', {
+            postId: postId,
+            action: 'like'
+        });
+        
+        if (response.success) {
+            await loadAdminPosts();
+            showToast('Post liked!', 'success');
+        } else {
+            showToast('Failed to like post', 'error');
+        }
+    } catch (error) {
+        console.error('Error toggling like:', error);
+        showToast('Failed to like post', 'error');
+    }
+}
+
+async function commentPost(postId) {
+    const input = document.getElementById(`commentInput-${postId}`);
+    if (!input) return;
+    
+    const comment = input.value.trim();
+    if (!comment) return;
+    
+    console.log('Attempting to comment on post:', postId, 'Comment:', comment);
+    
+    try {
+        const response = await apiCall('update_post_engagement.php', 'POST', {
+            postId: postId,
+            action: 'comment',
+            comment: comment,
+            author: 'Administrator'
+        });
+        
+        console.log('Comment API Response:', response);
+        
+        if (response && response.success) {
+            input.value = '';
+            // Reset loaded flag so comments reload
+            const commentsListDiv = document.getElementById(`admin-comments-list-${postId}`);
+            if (commentsListDiv) {
+                commentsListDiv.dataset.loaded = 'false';
+            }
+            await loadAdminPosts();
+            // Reload comments to show the new one
+            await loadAdminComments(postId);
+            if (commentsListDiv) {
+                commentsListDiv.dataset.loaded = 'true';
+            }
+            showToast('Comment added!', 'success');
+        } else {
+            const errorMsg = response ? response.message : 'Unknown error';
+            console.error('Comment failed:', errorMsg);
+            showToast(`Failed to add comment: ${errorMsg}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error adding comment:', error);
+        showToast('Failed to add comment: ' + error.message, 'error');
+    }
+}
+
+async function sharePost(postId) {
+    try {
+        // Update shares count in database
+        const response = await apiCall('update_post_engagement.php', 'POST', {
+            postId: postId,
+            action: 'share'
+        });
+        
+        // Copy link to clipboard
+        const shareUrl = `${window.location.origin}${window.location.pathname}?post=${postId}`;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            showToast('Post link copied to clipboard!', 'success');
+        } catch (clipboardError) {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = shareUrl;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            showToast('Post link copied to clipboard!', 'success');
+        }
+        
+        // Refresh to update shares count
+        await loadAdminPosts();
+    } catch (error) {
+        console.error('Error sharing post:', error);
+        showToast('Failed to share post', 'error');
+    }
+}
+
+async function adminDeletePost(postId) {
+    if (!confirm('Delete this post permanently?')) return;
+    
+    try {
+        const response = await apiCall('delete_post.php', 'POST', {
+            postId: postId
+        });
+        
+        if (response && response.success) {
+        await loadAdminPosts();
+        try { loadHomeFeed(); } catch (_) { /* ignore */ }
+            showToast('Post deleted successfully!', 'success');
+        } else {
+            const errorMsg = response ? response.message : 'Unknown error';
+            showToast(`Failed to delete: ${errorMsg}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting post:', error);
+        showToast('Failed to delete post', 'error');
+    }
+}
+
+// Helper function to display comments
+function displayCommentsHTML(postId, comments) {
+    if (!comments || comments.length === 0) {
+        return '<p style="text-align: center; color: #9ca3af; font-style: italic; padding: 15px;">No comments yet</p>';
+    }
+    
+    // Sort comments by timestamp (newest first, or if no timestamp, by order)
+    const sortedComments = [...comments].sort((a, b) => {
+        const timeA = a.timestamp || a.created_at || '';
+        const timeB = b.timestamp || b.created_at || '';
+        return timeB.localeCompare(timeA); // Newest first
+    });
+    
+    return sortedComments.map(comment => {
+        const commentText = comment.content || comment.text || '';
+        const commentAuthor = comment.author || 'User';
+        const commentTime = comment.timestamp || comment.created_at || '';
+        const authorInitial = commentAuthor.charAt(0).toUpperCase();
+        
+        // Escape HTML to prevent XSS
+        const escapeHtml = (text) => {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        };
+        
         return `
-        <div class=\"post-card\">\n            <div class=\"post-header\">\n                <div class=\"post-author-avatar\">\n                    <i class=\"fas fa-user-shield\"></i>\n                </div>\n                <div class=\"post-author-info\">\n                    <h4>${post.author}</h4>\n                    <p>${formatDate(post.timestamp)}</p>\n                </div>\n                <span class=\"post-audience-badge ${post.audience}\">\n                    ${post.audience === 'students' ? 'GranTES Students' : 'Home Page'}\n                </span>\n            </div>\n            <div class=\"post-content\">\n                ${Array.isArray(post.images) && post.images.length > 1 ? renderCarousel(post.images) : (post.image ? `<div class="post-image"><img src="${post.image}" alt="post image"></div>` : '')}\n                <div class=\"post-text\">${post.content}</div>\n                ${post.type === 'media' ? '<div class=\"post-media\"><i class=\"fas fa-image\"></i> Media attached</div>' : ''}\n                ${post.type === 'live' ? '<div class=\"post-live\"><i class=\"fas fa-video\"></i> Live video</div>' : ''}\n                ${post.type === 'feeling' ? '<div class=\"post-feeling\"><i class=\"fas fa-smile\"></i> Feeling/Activity</div>' : ''}\n            </div>\n            <div class=\"post-actions-bar\">\n                <button class=\"post-action-bar-btn\" onclick=\"adminDeletePost(${post.id})\">\n                    <i class=\"fas fa-trash\"></i>\n                    <span>Delete</span>\n                </button>\n            </div>
-            ${post.audience === 'students' ? `
-            <div class=\"admin-comments-section\" style=\"margin-top:10px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden;\">
-                <div style="padding:8px 10px; font-weight:600; color:#111827; background:#f3f4f6; display:flex; align-items:center; gap:10px; border-bottom:1px solid #e5e7eb;">
-                    <span><i class="fas fa-heart" style="color:#ef4444;"></i> ${likesCount} ${likesCount===1 ? 'Like' : 'Likes'}</span>
-                    <span style="opacity:0.4">•</span>
-                    <button onclick=\"toggleAdminComments(${post.id})\" style=\"background:none; border:none; color:#3b82f6; cursor:pointer; display:flex; align-items:center; gap:6px; font-weight:600;\">
-                        <i class="fas fa-comments"></i>
-                        <span>View Comments (${postComments.length})</span>
-                    </button>
+        <div class="comment-item" style="display: flex; gap: 12px; padding: 12px; border-bottom: 1px solid #eee; align-items: flex-start;">
+            <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0;">
+                    ${escapeHtml(authorInitial)}
+            </div>
+            <div style="flex: 1; min-width: 0;">
+                <div style="font-weight: 600; margin-bottom: 4px; color: #374151;">
+                        ${escapeHtml(commentAuthor)}
                 </div>
-                <div id=\"admin-comments-${post.id}\" style=\"display:none;\">
-                    ${postComments.length > 0 ? postComments.map(c => `
-                        <div class=\"admin-comment-row\" style=\"padding:8px 12px; border-bottom:1px solid #e5e7eb; background:#ffffff;\">
-                            <strong>${c.author || 'Student'}</strong>: ${c.text || ''}
-                            <span style=\"color:#9ca3af; font-size:12px; margin-left:6px;\">${c.timestamp ? formatDate(c.timestamp) : ''}</span>
-                        </div>
-                    `).join('') : '<div style=\"color:#9ca3af; font-style:italic; padding:12px; text-align:center;\">No comments yet</div>'}
+                    <div style="color: #4b5563; margin-bottom: 4px; word-wrap: break-word; white-space: pre-wrap;">
+                        ${escapeHtml(commentText)}
+                </div>
+                <div style="font-size: 12px; color: #9ca3af;">
+                        ${commentTime ? formatDate(commentTime) : 'Recently'}
                 </div>
             </div>
-            ` : ''}
         </div>
         `;
     }).join('');
 }
 
-function toggleLike(postId) {
-    const allPosts = JSON.parse(localStorage.getItem('adminPosts') || '[]');
-    const post = allPosts.find(p => p.id === postId);
-    if (!post) return;
-    if (post.liked) {
-        post.likes = Math.max(0, (post.likes || 0) - 1);
-        post.liked = false;
-    } else {
-        post.likes = (post.likes || 0) + 1;
-        post.liked = true;
+// Load and display comments for admin
+async function loadAdminComments(postId) {
+    const commentsListDiv = document.getElementById(`admin-comments-list-${postId}`);
+    if (!commentsListDiv) return;
+    
+    try {
+        const posts = await getPosts(); // Get all posts (no audience filter for admin)
+        const post = posts.find(p => p.id === postId);
+        
+        if (post && post.comments && Array.isArray(post.comments) && post.comments.length > 0) {
+                commentsListDiv.innerHTML = displayCommentsHTML(postId, post.comments);
+        } else {
+            commentsListDiv.innerHTML = '<p style="text-align: center; color: #9ca3af; font-style: italic; padding: 15px;">No comments yet</p>';
+        }
+    } catch (error) {
+        console.error('Error loading admin comments:', error);
+        commentsListDiv.innerHTML = '<p style="text-align: center; color: #9ca3af; font-style: italic; padding: 15px;">Error loading comments</p>';
     }
-    localStorage.setItem('adminPosts', JSON.stringify(allPosts));
-    loadAdminPosts();
 }
 
-function commentPost(postId) {
-    const comment = prompt('Add a comment:');
-    if (!comment || !comment.trim()) return;
-    const allPosts = JSON.parse(localStorage.getItem('adminPosts') || '[]');
-    const post = allPosts.find(p => p.id === postId);
-    if (!post) return;
-    if (!Array.isArray(post.comments)) post.comments = [];
-    post.comments.push({ id: Date.now(), author: 'Administrator', content: comment.trim(), timestamp: new Date().toISOString() });
-    localStorage.setItem('adminPosts', JSON.stringify(allPosts));
-    loadAdminPosts();
-    showToast('Comment added!', 'success');
-}
-
-function sharePost(postId) {
-    const allPosts = JSON.parse(localStorage.getItem('adminPosts') || '[]');
-    const post = allPosts.find(p => p.id === postId);
-    if (!post) return;
-    post.shares = (post.shares || 0) + 1;
-    localStorage.setItem('adminPosts', JSON.stringify(allPosts));
-    loadAdminPosts();
-    showToast('Post shared!', 'success');
-}
-
-function adminDeletePost(postId) {
-    if (!confirm('Delete this post permanently?')) return;
-    const allPosts = JSON.parse(localStorage.getItem('adminPosts') || '[]');
-    const updated = allPosts.filter(p => p.id !== postId);
-    localStorage.setItem('adminPosts', JSON.stringify(updated));
-    loadAdminPosts();
-    try { loadHomeFeed(); } catch (_) { /* ignore */ }
-    showToast('Post deleted', 'success');
+// Load and display comments for students
+async function loadStudentComments(postId) {
+    const commentsListDiv = document.getElementById(`student-comments-list-${postId}`);
+    if (!commentsListDiv) return;
+    
+    try {
+        // Try to get comments from the post data first
+        const posts = await getPosts('students');
+        const post = posts.find(p => p.id == postId);
+        
+        if (post && post.comments && Array.isArray(post.comments) && post.comments.length > 0) {
+                commentsListDiv.innerHTML = displayCommentsHTML(postId, post.comments);
+            } else {
+                commentsListDiv.innerHTML = '<p style="text-align: center; color: #9ca3af; font-style: italic; padding: 15px;">No comments yet</p>';
+        }
+    } catch (error) {
+        console.error('Error loading student comments:', error);
+        commentsListDiv.innerHTML = '<p style="text-align: center; color: #9ca3af; font-style: italic; padding: 15px;">Error loading comments</p>';
+    }
 }
 
 function toggleAdminComments(postId) {
     const commentsDiv = document.getElementById(`admin-comments-${postId}`);
+    const commentsListDiv = document.getElementById(`admin-comments-list-${postId}`);
+    
     if (!commentsDiv) return;
     
-    if (commentsDiv.style.display === 'none') {
+    if (commentsDiv.style.display === 'none' || commentsDiv.style.display === '') {
         commentsDiv.style.display = 'block';
+        
+        // Load comments from database if not already loaded
+        if (commentsListDiv && commentsListDiv.dataset.loaded !== 'true') {
+            loadAdminComments(postId).then(() => {
+                if (commentsListDiv) {
+                    commentsListDiv.dataset.loaded = 'true';
+                }
+            });
+        }
     } else {
         commentsDiv.style.display = 'none';
     }
@@ -2246,6 +3094,169 @@ function toggleAdminComments(postId) {
 function handlePostKeyPress(event) {
     if (event.key === 'Enter') {
         createPost('text');
+    }
+}
+
+// Load admin posts from database
+async function loadAdminPosts() {
+    const container = document.getElementById('postsFeed');
+    if (!container) {
+        console.log('postsFeed container not found');
+        return;
+    }
+    
+    try {
+        // Get posts from database
+        console.log('Loading admin posts...');
+        const posts = await getPosts();
+        console.log('Posts loaded:', posts);
+        
+        if (!posts || posts.length === 0) {
+            container.innerHTML = `
+                <div class="welcome-message">
+                    <h3>No posts yet</h3>
+                    <p>Start by creating your first announcement!</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Render posts
+        container.innerHTML = posts.map(post => {
+            let imagesHtml = '';
+            
+            console.log('Post images:', post.images);
+            
+            if (post.images) {
+                console.log('Post has images field:', post.images);
+                console.log('Type of post.images:', typeof post.images);
+                console.log('Is array?:', Array.isArray(post.images));
+                
+                // Handle both array and object formats
+                let imageArray = [];
+                
+                if (Array.isArray(post.images)) {
+                    imageArray = post.images;
+                    console.log('Images is already an array');
+                } else if (typeof post.images === 'string') {
+                    console.log('Images is a string, attempting to parse');
+                    try {
+                        const parsed = JSON.parse(post.images);
+                        imageArray = Array.isArray(parsed) ? parsed : [parsed];
+                        console.log('Successfully parsed JSON');
+                    } catch (e) {
+                        console.log('JSON parse failed, treating as single image');
+                        imageArray = [post.images];
+                    }
+                } else if (post.images) {
+                    imageArray = [post.images];
+                }
+                
+                // Handle double-encoded JSON (string that contains JSON array)
+                imageArray = imageArray.map(img => {
+                    // Check if img is a string that looks like JSON
+                    if (typeof img === 'string' && img.trim().startsWith('[') && img.trim().endsWith(']')) {
+                        try {
+                            const parsed = JSON.parse(img);
+                            // If parsing gives us an array, return the first element
+                            if (Array.isArray(parsed)) {
+                                return parsed[0];
+                            }
+                            return parsed;
+                        } catch (e) {
+                            return img;
+                        }
+                    }
+                    return img;
+                });
+                
+                // Filter out any null/undefined/empty values
+                imageArray = imageArray.filter(img => {
+                    const isValid = img && typeof img === 'string' && img.trim() !== '' && img.length > 10;
+                    console.log('Image valid?', isValid, img ? img.substring(0, 50) : 'N/A');
+                    return isValid;
+                });
+                
+                console.log('Final images array:', imageArray);
+                console.log('Number of images after filter:', imageArray.length);
+                
+                if (imageArray.length === 1) {
+                    console.log('Rendering single image');
+                    imagesHtml = `<div class="post-image-container"><img src="${imageArray[0]}" alt="Post image" class="post-image" style="max-width: 100%; border-radius: 8px; margin-top: 10px; display: block;"></div>`;
+                } else if (imageArray.length > 1) {
+                    console.log('Rendering carousel with', imageArray.length, 'images');
+                    imagesHtml = renderCarousel(imageArray);
+                } else {
+                    console.log('No valid images to render');
+                }
+            } else {
+                console.log('Post has no images field');
+            }
+            
+            return `
+                <div class="post-item" data-post-id="${post.id}">
+                    <div class="post-header">
+                        <div class="post-author">
+                            <div class="post-avatar"><i class="fas fa-user-shield"></i></div>
+                            <div class="post-author-info">
+                                <span class="post-author-name">Administrator</span>
+                                <span class="post-time">${formatDate(post.created_at)}</span>
+                            </div>
+                        </div>
+                        <div class="post-menu">
+                            <button class="post-menu-btn" onclick="openPostMenu(${post.id})" title="More options">
+                                <i class="fas fa-ellipsis-h"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="post-content">
+                        <p>${post.content || ''}</p>
+                        ${imagesHtml}
+                    </div>
+                    <div class="post-engagement">
+                        <div class="post-reactions">
+                            <span class="reactions-count"><span class="count-num">${post.likes || 0}</span> <span class="count-label">likes</span></span>
+                            <span class="comments-count"><span class="count-num">${post.comments_count || 0}</span> <span class="count-label">comments</span></span>
+                        </div>
+                        <div class="post-actions">
+                            <button class="action-btn like-btn" onclick="toggleLike(${post.id})">
+                                <i class="fas fa-thumbs-up"></i>
+                                <span>Like</span>
+                            </button>
+                            <button class="action-btn comment-btn" onclick="toggleAdminComments(${post.id})">
+                                <i class="fas fa-comment"></i>
+                                <span>Comment</span>
+                            </button>
+                        </div>
+                        <div id="admin-comments-${post.id}" class="comments-section" style="display: none;">
+                            <div id="admin-comments-list-${post.id}" data-loaded="false"></div>
+                            <div class="comment-input-container">
+                                <input type="text" placeholder="Write a comment..." id="commentInput-${post.id}" class="comment-input" onkeypress="if(event.key==='Enter') commentPost(${post.id})">
+                                <button onclick="commentPost(${post.id})" class="comment-submit-btn">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+    } catch (error) {
+        console.error('Error loading admin posts:', error);
+        container.innerHTML = `
+            <div class="welcome-message">
+                <h3>Error loading posts</h3>
+                <p>Please try refreshing the page.</p>
+            </div>
+        `;
+    }
+}
+
+function openPostMenu(postId) {
+    // Simple implementation - show delete option
+    if (confirm('Delete this post?')) {
+        adminDeletePost(postId);
     }
 }
 
@@ -2260,6 +3271,8 @@ function showStudentTab(tabName) {
         homepageContent.style.display = 'block';
         tabContent.style.display = 'none';
         navTabs.style.display = 'none';
+        // Load posts for student homepage
+        loadStudentHomepagePosts();
         return;
     }
     
@@ -2306,24 +3319,34 @@ function showStudentTab(tabName) {
 }
 
 // Student Messaging Functions
-function sendMessage() {
+async function sendMessage() {
     const input = document.getElementById('chatMessageInput');
     const text = input.value.trim();
     
     if (!text) return;
 
-    // Push into shared chatMessages and persist
-    const message = {
-        id: Date.now(),
-        sender: 'student',
-        text: text,
-        timestamp: new Date().toISOString(),
-        studentId: currentUser.studentData.id
-    };
-    chatMessages.push(message);
-    persistChatMessages();
-    input.value = '';
-    loadStudentMessages();
+    try {
+        const messageData = {
+            senderId: currentUser.studentData.id,
+            receiverId: 1, // Admin ID
+            senderType: 'student',
+            receiverType: 'admin',
+            content: text,
+            attachment: null,
+            attachmentName: null
+        };
+        
+        // Save to database
+        const response = await saveMessage(messageData);
+        
+        if (response && response.success) {
+            input.value = '';
+            await loadStudentMessages();
+        }
+    } catch (error) {
+        console.error('Error sending message:', error);
+        showToast('Failed to send message', 'error');
+    }
 }
 
 // simulateAdminResponse removed in favor of shared chatMessages
@@ -2339,53 +3362,226 @@ function triggerFileUpload() {
 }
 
 // Student Announcement Functions
-function togglePostLike(postId) {
-    const adminPosts = JSON.parse(localStorage.getItem('adminPosts') || '[]');
-    const post = adminPosts.find(p => p && p.id === postId);
-    if (!post) return;
-    if (!post.engagement) post.engagement = { likes: [], comments: [], shares: [] };
-    const currentId = currentUser && currentUser.studentData ? currentUser.studentData.id : null;
-    if (currentId == null) return;
-    const likeIdx = post.engagement.likes.findIndex(l => l && l.userId === currentId);
-    if (likeIdx >= 0) {
-        post.engagement.likes.splice(likeIdx, 1);
-    } else {
-        post.engagement.likes.push({ userId: currentId, userName: `${currentUser.studentData.firstName} ${currentUser.studentData.lastName}`, timestamp: new Date().toISOString() });
+async function studentToggleLike(postId) {
+    try {
+        console.log('Attempting to like post:', postId);
+        const response = await apiCall('update_post_engagement.php', 'POST', {
+            postId: postId,
+            action: 'like'
+        });
+        
+        console.log('API Response:', response);
+        
+        if (response && response.success) {
+            await loadStudentAnnouncements();
+            // Also reload student homepage posts if on homepage
+            try {
+                await loadStudentHomepagePosts();
+            } catch (e) {
+                // Ignore if not on homepage
+            }
+            showToast('Post liked!', 'success');
+        } else {
+            const errorMsg = response ? response.message : 'Unknown error';
+            console.error('Like failed:', errorMsg);
+            showToast(`Failed to like: ${errorMsg}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error toggling like:', error);
+        showToast('Failed to like post: ' + error.message, 'error');
     }
-    localStorage.setItem('adminPosts', JSON.stringify(adminPosts));
-    loadStudentAnnouncements();
 }
 
-function toggleComments(postId) {
-    const commentsSection = document.getElementById(`comments-${postId}`);
-    if (commentsSection.style.display === 'none') {
+function studentToggleComments(postId) {
+    const commentsSection = document.getElementById(`student-comments-${postId}`);
+    const commentsListDiv = document.getElementById(`student-comments-list-${postId}`);
+    
+    if (!commentsSection) return;
+    
+    if (commentsSection.style.display === 'none' || commentsSection.style.display === '') {
         commentsSection.style.display = 'block';
+        
+        // Load comments from database if not already loaded
+        if (commentsListDiv && commentsListDiv.dataset.loaded !== 'true') {
+            loadStudentComments(postId).then(() => {
+                if (commentsListDiv) {
+                    commentsListDiv.dataset.loaded = 'true';
+                }
+            });
+        }
     } else {
         commentsSection.style.display = 'none';
     }
 }
 
+async function loadStudentComments(postId) {
+    const commentsListDiv = document.getElementById(`student-comments-list-${postId}`);
+    if (!commentsListDiv) return;
+    
+    try {
+        // Try to get comments from the post data first
+        const posts = await getPosts('students');
+        const post = posts.find(p => p.id == postId);
+        
+        if (post && post.comments && Array.isArray(post.comments)) {
+            const comments = post.comments;
+            if (comments.length === 0) {
+                commentsListDiv.innerHTML = '<p style="text-align: center; color: #9ca3af; font-style: italic; padding: 15px;">No comments yet</p>';
+            } else {
+                commentsListDiv.innerHTML = comments.map(comment => `
+                    <div class="comment-item" style="display: flex; gap: 12px; padding: 12px; border-bottom: 1px solid #eee; align-items: flex-start;">
+                        <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0;">
+                            ${comment.author ? comment.author.charAt(0).toUpperCase() : 'U'}
+                        </div>
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="font-weight: 600; margin-bottom: 4px; color: #374151;">
+                                ${comment.author || 'User'}
+                            </div>
+                            <div style="color: #4b5563; margin-bottom: 4px; word-wrap: break-word;">
+                                ${comment.content || comment.text || ''}
+                            </div>
+                            <div style="font-size: 12px; color: #9ca3af;">
+                                ${formatDate(comment.created_at || comment.timestamp)}
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            return;
+        }
+        
+        // Fallback: try API endpoint
+        const response = await apiCall(`get_post_comments.php?postId=${postId}`);
+        if (response && response.success && response.comments) {
+            const comments = response.comments;
+            if (comments.length === 0) {
+                commentsListDiv.innerHTML = '<p style="text-align: center; color: #9ca3af; font-style: italic; padding: 15px;">No comments yet</p>';
+            } else {
+                commentsListDiv.innerHTML = comments.map(comment => `
+                    <div class="comment-item" style="display: flex; gap: 12px; padding: 12px; border-bottom: 1px solid #eee; align-items: flex-start;">
+                        <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0;">
+                            ${comment.author ? comment.author.charAt(0).toUpperCase() : 'U'}
+                        </div>
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="font-weight: 600; margin-bottom: 4px; color: #374151;">
+                                ${comment.author || 'User'}
+                            </div>
+                            <div style="color: #4b5563; margin-bottom: 4px; word-wrap: break-word;">
+                                ${comment.content || comment.text || ''}
+                            </div>
+                            <div style="font-size: 12px; color: #9ca3af;">
+                                ${formatDate(comment.created_at || comment.timestamp)}
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        } else {
+            commentsListDiv.innerHTML = '<p style="text-align: center; color: #9ca3af; font-style: italic; padding: 15px;">No comments yet</p>';
+        }
+    } catch (error) {
+        console.error('Error loading comments:', error);
+        commentsListDiv.innerHTML = '<p style="text-align: center; color: #9ca3af; font-style: italic; padding: 15px;">No comments yet</p>';
+    }
+}
+
+async function studentCommentPost(postId) {
+    const input = document.getElementById(`studentCommentInput-${postId}`);
+    if (!input) return;
+    
+    const comment = input.value.trim();
+    if (!comment) return;
+    
+    console.log('Attempting to comment on post:', postId, 'Comment:', comment);
+    
+    try {
+        const authorName = currentUser && currentUser.studentData 
+            ? `${currentUser.studentData.firstName} ${currentUser.studentData.lastName}` 
+            : 'Student';
+            
+        const response = await apiCall('update_post_engagement.php', 'POST', {
+            postId: postId,
+            action: 'comment',
+            comment: comment,
+            author: authorName
+        });
+        
+        console.log('Comment API Response:', response);
+        
+        if (response && response.success) {
+            input.value = '';
+            // Reset loaded flag so comments reload
+            const commentsListDiv = document.getElementById(`student-comments-list-${postId}`);
+            if (commentsListDiv) {
+                commentsListDiv.dataset.loaded = 'false';
+            }
+            // Reload posts and comments
+            await loadStudentAnnouncements();
+            await loadStudentComments(postId);
+            // Also reload student homepage posts if on homepage  
+            try {
+                await loadStudentHomepagePosts();
+            } catch (e) {
+                // Ignore if not on homepage
+            }
+            if (commentsListDiv) {
+                commentsListDiv.dataset.loaded = 'true';
+            }
+            showToast('Comment added!', 'success');
+        } else {
+            const errorMsg = response ? response.message : 'Unknown error';
+            console.error('Comment failed:', errorMsg);
+            showToast(`Failed to add comment: ${errorMsg}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error adding comment:', error);
+        showToast('Failed to add comment: ' + error.message, 'error');
+    }
+}
+
+async function studentSharePost(postId) {
+    try {
+        // Update shares count in database
+        const response = await apiCall('update_post_engagement.php', 'POST', {
+            postId: postId,
+            action: 'share'
+        });
+        
+        // Copy link to clipboard
+        const shareUrl = `${window.location.origin}${window.location.pathname}?post=${postId}`;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            showToast('Post link copied to clipboard!', 'success');
+        } catch (clipboardError) {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = shareUrl;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            showToast('Post link copied to clipboard!', 'success');
+        }
+        
+        // Refresh to update shares count
+        await loadStudentAnnouncements();
+    } catch (error) {
+        console.error('Error sharing post:', error);
+        showToast('Failed to share post', 'error');
+    }
+}
+
+// Legacy functions for backward compatibility
+function togglePostLike(postId) {
+    studentToggleLike(postId);
+}
+
+function toggleComments(postId) {
+    studentToggleComments(postId);
+}
+
 function addComment(postId) {
-    const input = document.getElementById(`commentInput-${postId}`);
-    const text = input.value.trim();
-    
-    if (!text) return;
-
-    const comment = {
-        id: Date.now(),
-        postId: postId,
-        author: currentUser.name,
-        text: text,
-        timestamp: new Date().toISOString()
-    };
-
-    const studentComments = JSON.parse(localStorage.getItem('studentComments') || '[]');
-    studentComments.push(comment);
-    localStorage.setItem('studentComments', JSON.stringify(studentComments));
-    
-    input.value = '';
-    loadStudentAnnouncements();
-    showToast('Comment added successfully!', 'success');
+    studentCommentPost(postId);
 }
 
 function renderComments(comments) {
@@ -2416,9 +3612,13 @@ function closeStudentRegistrationModal() {
     document.getElementById('studentRegistrationModal').style.display = 'none';
 }
 
-function handleStudentRegistration(event) {
-    event.preventDefault();
+async function handleStudentRegistration(event) {
+    console.log('🔥🔥🔥 handleStudentRegistration called from script.js! 🔥🔥🔥');
+    if (event && event.preventDefault) {
+        event.preventDefault();
+    }
     
+    console.log('Getting form values...');
     const firstName = (document.getElementById('adminFirstName').value || '').trim();
     const lastName = (document.getElementById('adminLastName').value || '').trim();
     const studentId = (document.getElementById('adminStudentIdInput').value || '').trim();
@@ -2434,16 +3634,22 @@ function handleStudentRegistration(event) {
     const isIndigenous = document.getElementById('adminIsIndigenous') ? document.getElementById('adminIsIndigenous').checked : false;
     const isPwd = document.getElementById('adminIsPwd') ? document.getElementById('adminIsPwd').checked : false;
     
+    console.log('Form values:', { firstName, lastName, studentId, email, awardNumber, department, place, course, year });
+    
     // Basic required validation
     if (!firstName || !lastName || !studentId || !email || !awardNumber || !department || !place || !course || !year) {
+        console.log('❌ Validation failed: Missing required fields');
         showToast('Please complete all required fields', 'error');
         return;
     }
     // Validate passwords match
     if (password !== confirmPassword) {
+        console.log('❌ Validation failed: Passwords do not match');
         showToast('Passwords do not match!', 'error');
         return;
     }
+    
+    console.log('✅ Validation passed, proceeding with registration...');
     
     // Load latest students data from localStorage
     const savedStudents = localStorage.getItem('students');
@@ -2467,48 +3673,87 @@ function handleStudentRegistration(event) {
     }
     
     // Helper to finalize save after optional image processing
-    const finalizeSave = (idPictureDataUrl) => {
-        // Create new student with unique ID
-        const newStudent = {
-            id: students.length > 0 ? Math.max(...students.map(s => s.id)) + 1 : 1,
-            firstName: firstName,
-            lastName: lastName,
-            studentId: studentId,
-            email: email,
-            awardNumber: awardNumber,
-            password: password,
-            department: department,
-            place: place,
-            course: course,
-            year: year,
-            status: 'active',
-            applicationStatus: 'none',
-            registered: new Date().toISOString(),
-            role: 'student',
-            idPictureDataUrl: idPictureDataUrl || null,
-            isIndigenous: isIndigenous,
-            isPwd: isPwd
-        };
-        
-        students.push(newStudent);
-        localStorage.setItem('students', JSON.stringify(students));
-        
-        closeStudentRegistrationModal();
-        showToast('Student registered successfully!', 'success');
-        showAdminTab('students');
+    const finalizeSave = async (idPictureDataUrl) => {
+        try {
+            console.log('Starting registration with data:', {
+                firstName, lastName, studentId, email, password, 
+                department, course, year, awardNumber, place
+            });
+            
+            // Call the API to save to database
+            const response = await apiCall('register.php', 'POST', {
+                firstName: firstName,
+                lastName: lastName,
+                studentId: studentId,
+                email: email,
+                password: password,
+                department: department,
+                course: course,
+                year: year,
+                awardNumber: awardNumber,
+                place: place,
+                isIndigenous: isIndigenous,
+                isPwd: isPwd
+            });
+            
+            console.log('API Response:', response);
+            
+            if (!response || !response.success) {
+                console.error('Registration failed:', response);
+                showToast(response.message || 'Failed to register student in database', 'error');
+                return;
+            }
+            
+            // Also save to localStorage for backward compatibility
+            const newStudent = {
+                id: response.id || (students.length > 0 ? Math.max(...students.map(s => s.id)) + 1 : 1),
+                firstName: firstName,
+                lastName: lastName,
+                studentId: studentId,
+                email: email,
+                awardNumber: awardNumber,
+                password: password,
+                department: department,
+                place: place,
+                course: course,
+                year: year,
+                status: 'active',
+                applicationStatus: 'none',
+                registered: new Date().toISOString(),
+                role: 'student',
+                idPictureDataUrl: idPictureDataUrl || null,
+                isIndigenous: isIndigenous,
+                isPwd: isPwd
+            };
+            
+            students.push(newStudent);
+            localStorage.setItem('students', JSON.stringify(students));
+            
+            closeStudentRegistrationModal();
+            showToast('Student registered successfully!', 'success');
+            // Refresh admin stats
+            await updateAdminStats();
+            // Reload students list
+            await loadStudents();
+        } catch (error) {
+            console.error('Error registering student:', error);
+            showToast('Failed to register student: ' + error.message, 'error');
+        }
     };
-
+    
     if (photoFile) {
         const reader = new FileReader();
-        reader.onload = function(e) {
-            finalizeSave(e.target.result);
+        reader.onload = async function(e) {
+            await finalizeSave(e.target.result);
         };
         reader.readAsDataURL(photoFile);
     } else {
-        finalizeSave(null);
+        finalizeSave(null).catch(error => {
+            console.error('Error in finalizeSave:', error);
+            showToast('Failed to register student', 'error');
+        });
     }
 }
-
 // Bulk Registration Modal Functions
 function openBulkRegistrationModal() {
     document.getElementById('bulkRegistrationModal').style.display = 'block';
@@ -2539,6 +3784,8 @@ function showAdminTab(tabName) {
         homepageContent.style.display = 'block';
         tabContent.style.display = 'none';
         navTabs.style.display = 'none';
+        // Refresh stats when returning to homepage
+        updateAdminStats();
         return;
     }
     
@@ -2586,6 +3833,7 @@ function showAdminTab(tabName) {
 // Load Applications Tab
 function loadApplications() {
     const container = document.getElementById('applicationsContainer');
+    if (!container) return; // Fix: Container doesn't exist, exit early
     
     if (applications.length === 0) {
         container.innerHTML = '<p class="no-data">No applications found.</p>';
@@ -2621,9 +3869,7 @@ function loadApplications() {
                 </div>
             </div>
             <div class="application-actions">
-                <button class="btn btn-primary" onclick="reviewApplication(${app.id})">Review</button>
-                <button class="btn btn-success" onclick="updateApplicationStatus(${app.id}, 'approved')">Approve</button>
-                <button class="btn btn-danger" onclick="updateApplicationStatus(${app.id}, 'rejected')">Reject</button>
+                <button class="btn btn-secondary" onclick="viewApplicationDetails(${app.id})">View Details</button>
             </div>
         </div>
     `).join('');
@@ -2632,57 +3878,146 @@ function loadApplications() {
 }
 
 // Load Students Tab
-function loadStudents() {
+async function loadStudents() {
     const container = document.getElementById('studentsContainer');
     if (!container) {
         console.log('studentsContainer not found!');
         return;
     }
-    // Remove legacy fallback that mirrored awardNumber into studentId to avoid confusion
-    const filteredStudents = filterStudentsByStatus();
-    if (filteredStudents.length === 0) {
-        container.innerHTML = '<p class="no-data">No students found.</p>';
-        return;
-    }
-    container.innerHTML = filteredStudents.map((student, index) => {
-        const safeStatus = (student.status || 'active').toLowerCase();
-        return `
-            <div class="student-item">
-                <div class="student-header">
-                    <h4><span class="student-index">${index + 1}</span>${student.firstName || ''} ${student.lastName || ''}</h4>
-                </div>
-                <div class="student-info">
-                    <div class="info-item">
-                        <span class="info-label">Student ID</span>
-                        <span class="info-value">${student.studentId || 'N/A'}</span>
+    
+    try {
+        // Load students from database
+        const students = await getStudentsFromDatabase();
+        if (!students || students.length === 0) {
+            container.innerHTML = '<p class="no-data">No students found.</p>';
+            await updateAdminStats(); // Refresh stats from database
+            return;
+        }
+        
+        // Filter by status
+        const statusFilter = document.getElementById('studentStatusFilter').value;
+        const searchTerm = (document.getElementById('searchStudentRecords').value || '').trim().toLowerCase();
+        
+        let filteredStudents = students;
+        if (statusFilter) {
+            filteredStudents = filteredStudents.filter(s => (s.status || 'active') === statusFilter);
+        }
+        if (searchTerm) {
+            filteredStudents = filteredStudents.filter(s => 
+                (s.firstName || '').toLowerCase().includes(searchTerm) ||
+                (s.lastName || '').toLowerCase().includes(searchTerm) ||
+                (s.studentId || '').toLowerCase().includes(searchTerm) ||
+                (s.email || '').toLowerCase().includes(searchTerm) ||
+                (s.awardNumber || '').toLowerCase().includes(searchTerm)
+            );
+        }
+
+        if (filteredStudents.length === 0) {
+            container.innerHTML = '<p class="no-data">No students found.</p>';
+            return;
+        }
+        
+        container.innerHTML = filteredStudents.map((student, index) => {
+            const safeStatus = (student.status || 'active').toLowerCase();
+            const isArchived = safeStatus === 'archived';
+            return `
+                <div class="student-item">
+                    <div class="student-header">
+                        <h4><span class="student-index">${index + 1}</span>${student.firstName || ''} ${student.lastName || ''}</h4>
+                    </div>
+                    <div class="student-info">
+                        <div class="info-item">
+                            <span class="info-label">Student ID</span>
+                            <span class="info-value">${student.studentId || 'N/A'}</span>
+                        </div>
+                        ${isArchived ? '<div class="info-item"><span class="info-label">Status</span><span class="info-value" style="color: #f59e0b;">Archived</span></div>' : ''}
+                    </div>
+                    <div class="student-actions">
+                        <button class="btn btn-secondary" onclick="openStudentProfileModal(${student.id})">View Profile</button>
+                        <button class="btn btn-secondary" onclick="editStudent(${student.id})">Edit</button>
+                        ${isArchived 
+                            ? `<button class="btn btn-success" onclick="restoreStudent(${student.id})">Restore</button>`
+                            : `<button class="btn btn-secondary" onclick="archiveStudent(${student.id})">Archive</button>`
+                        }
+                        <button class="btn btn-danger" onclick="deleteStudent(${student.id})">Delete</button>
                     </div>
                 </div>
-                <div class="student-actions">
-                    <button class="btn btn-secondary" onclick="openStudentProfileModal(${student.id})">View Profile</button>
-                    <button class="btn btn-secondary" onclick="editStudent(${student.id})">Edit</button>
-                    <button class="btn btn-secondary" onclick="archiveStudent(${student.id})">Archive</button>
-                    <button class="btn btn-danger" onclick="deleteStudent(${student.id})">Delete</button>
-                </div>
-            </div>
-        `;
-    }).join('');
+            `;
+        }).join('');
+
+        await updateAdminStats(); // Refresh stats from database
+    } catch (error) {
+        console.error('Error loading students:', error);
+        container.innerHTML = '<p class="no-data">Error loading students.</p>';
+    }
 }
 
 // Load Reports Tab
-function loadReports() {
+async function loadReports() {
+    console.log('📊 Loading reports...');
+    
     const departmentChart = document.getElementById('departmentChart');
     const departmentSummary = document.getElementById('departmentSummary');
     const placeChart = document.getElementById('placeChart');
     const placeSummary = document.getElementById('placeSummary');
 
-    // Department analysis
+    try {
+        // Fetch students from database (includes both active and archived)
+        const studentsArr = await getStudentsFromDatabase();
+        console.log('✅ Students loaded for reports:', studentsArr.length);
+
+        if (!studentsArr || studentsArr.length === 0) {
+            // Show no data message for both charts
+            if (departmentSummary) {
+                departmentSummary.innerHTML = '<p class="no-data">No students data available.</p>';
+            }
+            if (placeSummary) {
+                placeSummary.innerHTML = '<p class="no-data">No students data available.</p>';
+            }
+            if (departmentChart) {
+                const ctx = departmentChart.getContext('2d');
+                ctx.clearRect(0, 0, departmentChart.width, departmentChart.height);
+            }
+            if (placeChart) {
+                const ctx = placeChart.getContext('2d');
+                ctx.clearRect(0, 0, placeChart.width, placeChart.height);
+            }
+            return;
+        }
+
+        // Calculate status breakdowns
+        const activeStudents = studentsArr.filter(s => {
+            const status = (s.status || s.student_status || 'active').toLowerCase();
+            return status === 'active';
+        });
+        const archivedStudents = studentsArr.filter(s => {
+            const status = (s.status || s.student_status || 'active').toLowerCase();
+            return status === 'archived';
+        });
+
+        console.log(`📊 Report statistics: ${studentsArr.length} total (${activeStudents.length} active, ${archivedStudents.length} archived)`);
+
+        // Department analysis (includes all students - active and archived)
     if (departmentChart && departmentSummary) {
-        const studentsArr = JSON.parse(localStorage.getItem('students') || '[]');
         const deptCounts = studentsArr.reduce((acc, s) => {
-            const d = (s && s.department) ? s.department : 'Unspecified';
+                const d = (s && s.department && s.department.trim()) ? s.department.trim() : 'Unspecified';
             acc[d] = (acc[d] || 0) + 1;
             return acc;
         }, {});
+            
+            // Department breakdown by status
+            const deptActiveCounts = activeStudents.reduce((acc, s) => {
+                const d = (s && s.department && s.department.trim()) ? s.department.trim() : 'Unspecified';
+                acc[d] = (acc[d] || 0) + 1;
+                return acc;
+            }, {});
+            
+            const deptArchivedCounts = archivedStudents.reduce((acc, s) => {
+                const d = (s && s.department && s.department.trim()) ? s.department.trim() : 'Unspecified';
+                acc[d] = (acc[d] || 0) + 1;
+                return acc;
+            }, {});
+            
         if (Object.keys(deptCounts).length === 0) {
             departmentSummary.innerHTML = '<p class="no-data">No department data available.</p>';
             const ctx = departmentChart.getContext('2d');
@@ -2692,15 +4027,21 @@ function loadReports() {
             const total = Object.values(deptCounts).reduce((a, b) => a + b, 0);
             const sorted = Object.entries(deptCounts).sort((a, b) => b[1] - a[1]);
             departmentSummary.innerHTML = `
+                    <div style="margin-bottom: 10px; padding: 8px; background: #f3f4f6; border-radius: 6px; font-size: 0.85em;">
+                        <strong>Total: ${total}</strong> (${activeStudents.length} Active, ${archivedStudents.length} Archived)
+                    </div>
                 <ul class="dept-summary-list">
                     ${sorted.map(([name, count], idx) => {
                         const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                            const activeCount = deptActiveCounts[name] || 0;
+                            const archivedCount = deptArchivedCounts[name] || 0;
                         const color = `hsl(${(idx * 53) % 360}, 70%, 55%)`;
                         const abbr = abbreviateDepartment(name);
-                        return `<li title="${name}">
+                            return `<li title="${name} - Active: ${activeCount}, Archived: ${archivedCount}">
                             <span class="dept-color-dot" style="background:${color}"></span>
                             <span class="dept-name">${abbr}</span>
                             <span class="dept-count">${count} (${pct}%)</span>
+                                ${archivedCount > 0 ? `<span style="font-size: 0.8em; color: #f59e0b; margin-left: 8px;">[${archivedCount} archived]</span>` : ''}
                         </li>`;
                     }).join('')}
                 </ul>
@@ -2708,14 +4049,111 @@ function loadReports() {
         }
     }
 
-    // From (place) analysis
+        // From (place) analysis (includes all students - active and archived)
+        // Group by city name - normalize city names for better grouping
     if (placeChart && placeSummary) {
-        const studentsArr = JSON.parse(localStorage.getItem('students') || '[]');
-        const placeCounts = studentsArr.reduce((acc, s) => {
-            const p = (s && s.place && s.place.trim()) ? s.place.trim() : 'Unspecified';
-            acc[p] = (acc[p] || 0) + 1;
-            return acc;
-        }, {});
+            // Helper function to normalize city names
+            const normalizeCityName = (place) => {
+                if (!place || !place.trim()) return 'Unspecified';
+                
+                let normalized = place.trim();
+                
+                // Convert to lowercase for comparison
+                normalized = normalized.toLowerCase();
+                
+                // Remove common suffixes that might cause duplication
+                normalized = normalized.replace(/\s+(city|town|municipality|municipal|province|prov)$/i, '');
+                
+                // Extract just the city name if it contains comma (e.g., "City, Province" -> "City")
+                const parts = normalized.split(',');
+                if (parts.length > 1) {
+                    normalized = parts[0].trim();
+                }
+                
+                // Capitalize first letter of each word for display
+                return normalized.split(' ').map(word => 
+                    word.charAt(0).toUpperCase() + word.slice(1)
+                ).join(' ');
+            };
+            
+            // Helper function to get display name (use original, or normalized if original is empty)
+            const getDisplayName = (place, normalized) => {
+                if (!place || !place.trim()) return 'Unspecified';
+                // Return the first part before comma, or full name if no comma
+                const parts = place.trim().split(',');
+                return parts[0].trim() || normalized || 'Unspecified';
+            };
+            
+            // First pass: normalize all places and group them
+            const placeGroups = {};
+            studentsArr.forEach(s => {
+                const originalPlace = (s && s.place && s.place.trim()) ? s.place.trim() : '';
+                const normalized = normalizeCityName(originalPlace);
+                const displayName = getDisplayName(originalPlace, normalized);
+                
+                if (!placeGroups[normalized]) {
+                    placeGroups[normalized] = {
+                        count: 0,
+                        displayName: displayName,
+                        originalPlaces: new Set()
+                    };
+                }
+                placeGroups[normalized].count++;
+                if (originalPlace) {
+                    placeGroups[normalized].originalPlaces.add(originalPlace);
+                }
+            });
+            
+            // Convert to counts object with display names
+            const placeCounts = {};
+            Object.keys(placeGroups).forEach(normalized => {
+                const group = placeGroups[normalized];
+                placeCounts[group.displayName] = group.count;
+            });
+            
+            // Place breakdown by status (using same normalization)
+            const placeActiveGroups = {};
+            activeStudents.forEach(s => {
+                const originalPlace = (s && s.place && s.place.trim()) ? s.place.trim() : '';
+                const normalized = normalizeCityName(originalPlace);
+                const displayName = getDisplayName(originalPlace, normalized);
+                
+                if (!placeActiveGroups[normalized]) {
+                    placeActiveGroups[normalized] = {
+                        count: 0,
+                        displayName: displayName
+                    };
+                }
+                placeActiveGroups[normalized].count++;
+            });
+            
+            const placeActiveCounts = {};
+            Object.keys(placeActiveGroups).forEach(normalized => {
+                const group = placeActiveGroups[normalized];
+                placeActiveCounts[group.displayName] = group.count;
+            });
+            
+            const placeArchivedGroups = {};
+            archivedStudents.forEach(s => {
+                const originalPlace = (s && s.place && s.place.trim()) ? s.place.trim() : '';
+                const normalized = normalizeCityName(originalPlace);
+                const displayName = getDisplayName(originalPlace, normalized);
+                
+                if (!placeArchivedGroups[normalized]) {
+                    placeArchivedGroups[normalized] = {
+                        count: 0,
+                        displayName: displayName
+                    };
+                }
+                placeArchivedGroups[normalized].count++;
+            });
+            
+            const placeArchivedCounts = {};
+            Object.keys(placeArchivedGroups).forEach(normalized => {
+                const group = placeArchivedGroups[normalized];
+                placeArchivedCounts[group.displayName] = group.count;
+            });
+            
         if (Object.keys(placeCounts).length === 0) {
             placeSummary.innerHTML = '<p class="no-data">No origin data available.</p>';
             const ctx = placeChart.getContext('2d');
@@ -2726,18 +4164,38 @@ function loadReports() {
             const total = Object.values(placeCounts).reduce((a, b) => a + b, 0);
             const sorted = Object.entries(placeCounts).sort((a, b) => b[1] - a[1]).slice(0, 12);
             placeSummary.innerHTML = `
+                    <div style="margin-bottom: 10px; padding: 8px; background: #f3f4f6; border-radius: 6px; font-size: 0.85em;">
+                        <strong>Total: ${total}</strong> (${activeStudents.length} Active, ${archivedStudents.length} Archived)
+                    </div>
                 <ul class="dept-summary-list">
                     ${sorted.map(([name, count], idx) => {
                         const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                            const activeCount = placeActiveCounts[name] || 0;
+                            const archivedCount = placeArchivedCounts[name] || 0;
                         const color = `hsl(${(idx * 53) % 360}, 70%, 55%)`;
-                        return `<li title="${name}">
+                            return `<li title="${name} - Active: ${activeCount}, Archived: ${archivedCount}">
                             <span class="dept-color-dot" style="background:${color}"></span>
                             <span class="dept-name">${(name || 'Unspecified').toLowerCase()}</span>
                             <span class="dept-count">${count} (${pct}%)</span>
+                                ${archivedCount > 0 ? `<span style="font-size: 0.8em; color: #f59e0b; margin-left: 8px;">[${archivedCount} archived]</span>` : ''}
                         </li>`;
                     }).join('')}
                 </ul>
             `;
+            }
+        }
+        
+        console.log('✅ Reports loaded successfully');
+    } catch (error) {
+        console.error('❌ Error loading reports:', error);
+        if (departmentSummary) {
+            departmentSummary.innerHTML = '<p class="no-data">Error loading department data.</p>';
+        }
+        if (placeSummary) {
+            placeSummary.innerHTML = '<p class="no-data">Error loading origin data.</p>';
+        }
+        if (typeof showToast === 'function') {
+            showToast('Failed to load reports. Please try again.', 'error');
         }
     }
 }
@@ -2783,19 +4241,182 @@ function closeStudentProfileModal() {
     document.getElementById('studentProfileModal').style.display = 'none';
 }
 
-function editStudent(studentId) {
-    showToast('Edit student functionality coming soon!', 'info');
+async function editStudent(studentId) {
+    try {
+        console.log('📝 Loading student data for editing:', studentId);
+        
+        // Fetch student data from database
+        const students = await getStudentsFromDatabase();
+        const student = students.find(s => s.id === studentId || s.id == studentId);
+        
+    if (!student) {
+        showToast('Student not found', 'error');
+        return;
+    }
+    
+        console.log('✅ Student found:', student);
+        
+        // Populate the edit form with student data
+        document.getElementById('editStudentId').value = student.id;
+        document.getElementById('editFirstName').value = student.firstName || student.first_name || '';
+        document.getElementById('editLastName').value = student.lastName || student.last_name || '';
+        document.getElementById('editEmail').value = student.email || '';
+        document.getElementById('editCourse').value = student.course || '';
+        document.getElementById('editYear').value = student.year || student.yearLevel || student.year_level || '';
+        document.getElementById('editDepartment').value = student.department || '';
+        document.getElementById('editPlace').value = student.place || student.from || student.origin || '';
+        document.getElementById('editIsIndigenous').checked = student.isIndigenous === true || student.isIndigenous === 1 || student.is_indigenous === 1 || student.is_indigenous === true;
+        document.getElementById('editIsPwd').checked = student.isPwd === true || student.isPwd === 1 || student.is_pwd === 1 || student.is_pwd === true;
+        
+        // Show the modal
+        document.getElementById('editStudentModal').style.display = 'block';
+        
+    } catch (error) {
+        console.error('❌ Error loading student for editing:', error);
+        showToast('Failed to load student data: ' + error.message, 'error');
+    }
 }
 
-function archiveStudent(studentId) {
-    if (confirm('Are you sure you want to archive this student?')) {
-        const student = students.find(s => s.id === studentId);
-        if (student) {
-            student.status = 'archived';
-            localStorage.setItem('students', JSON.stringify(students));
-            loadStudents();
-            showToast('Student archived successfully!', 'success');
+function closeEditStudentModal() {
+    document.getElementById('editStudentModal').style.display = 'none';
+    // Reset form
+    document.getElementById('editStudentForm').reset();
+}
+
+async function handleEditStudent(event) {
+    event.preventDefault();
+    
+    try {
+        const studentId = document.getElementById('editStudentId').value;
+        const firstName = document.getElementById('editFirstName').value.trim();
+        const lastName = document.getElementById('editLastName').value.trim();
+        const email = document.getElementById('editEmail').value.trim();
+        const course = document.getElementById('editCourse').value.trim();
+        const year = document.getElementById('editYear').value;
+        const department = document.getElementById('editDepartment').value;
+        const place = document.getElementById('editPlace').value.trim();
+        const isIndigenous = document.getElementById('editIsIndigenous').checked ? 1 : 0;
+        const isPwd = document.getElementById('editIsPwd').checked ? 1 : 0;
+        
+        // Validation
+        if (!firstName || !lastName || !email || !course || !year || !department || !place) {
+            showToast('Please fill in all required fields', 'error');
+            return;
         }
+        
+        // Email validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            showToast('Please enter a valid email address', 'error');
+            return;
+        }
+        
+        console.log('📤 Updating student:', {
+            id: studentId,
+            firstName,
+            lastName,
+            email,
+            course,
+            year,
+            department,
+            place,
+            isIndigenous,
+            isPwd
+        });
+        
+        // Update student in database
+        const response = await updateStudent({
+            id: parseInt(studentId),
+            firstName: firstName,
+            lastName: lastName,
+            email: email,
+            course: course,
+            year: year,
+            department: department,
+            place: place,
+            isIndigenous: isIndigenous,
+            isPwd: isPwd
+        });
+        
+        if (response && response.success) {
+            showToast('Student updated successfully!', 'success');
+            closeEditStudentModal();
+            await loadStudents(); // Refresh student list
+            await updateAdminStats(); // Refresh admin stats
+        } else {
+            showToast(response?.message || 'Failed to update student', 'error');
+        }
+    } catch (error) {
+        console.error('❌ Error updating student:', error);
+        showToast('Failed to update student: ' + error.message, 'error');
+    }
+}
+
+async function archiveStudent(studentId) {
+    if (!confirm('Are you sure you want to archive this student?')) {
+        return;
+    }
+    
+    try {
+        console.log('📦 Archiving student:', studentId);
+        
+        // Call archive API
+        const response = await apiCall('archive_student.php', 'POST', {
+            id: studentId,
+            status: 'archived'
+        });
+        
+        if (response && response.success) {
+            showToast('Student archived successfully!', 'success');
+            await loadStudents(); // Refresh student list
+            await updateAdminStats(); // Refresh admin stats
+            
+            // Check if reports tab is active and refresh it
+            const reportsTab = document.getElementById('reports-tab');
+            if (reportsTab && reportsTab.classList.contains('active')) {
+                console.log('📊 Refreshing reports after archiving...');
+                await loadReports();
+            }
+        } else {
+            showToast(response?.message || 'Failed to archive student', 'error');
+        }
+    } catch (error) {
+        console.error('❌ Error archiving student:', error);
+        showToast('Failed to archive student: ' + error.message, 'error');
+    }
+}
+
+async function restoreStudent(studentId) {
+    if (!confirm('Are you sure you want to restore this student?')) {
+        return;
+    }
+    
+    try {
+        console.log('📦 Restoring student:', studentId);
+        
+        // Call archive API with 'active' status
+        const response = await apiCall('archive_student.php', 'POST', {
+            id: studentId,
+            status: 'active'
+        });
+        
+        if (response && response.success) {
+            showToast('Student restored successfully!', 'success');
+            await loadStudents(); // Refresh student list
+            await updateAdminStats(); // Refresh admin stats
+            
+            // Check if reports tab is active and refresh it
+            const reportsTab = document.getElementById('reports-tab');
+            if (reportsTab && reportsTab.classList.contains('active')) {
+                console.log('📊 Refreshing reports after restoring...');
+                await loadReports();
+            }
+        } else {
+            showToast(response?.message || 'Failed to restore student', 'error');
+        }
+    } catch (error) {
+        console.error('❌ Error restoring student:', error);
+        showToast('Failed to restore student: ' + error.message, 'error');
     }
 }
 
@@ -2843,28 +4464,11 @@ function reviewApplication(applicationId) {
     `;
     
     // Show modal
-    document.getElementById('reviewModal').style.display = 'block';
+    // reviewModal removed - using viewApplicationDetails instead
+    viewApplicationDetails(application.id);
 }
 
-function updateApplicationStatus(applicationId, status) {
-    const application = applications.find(app => app.id === applicationId);
-    if (!application) return;
-    
-    application.status = status;
-    application.reviewedDate = new Date().toISOString();
-    
-    // Save to localStorage
-    localStorage.setItem('applications', JSON.stringify(applications));
-    
-    // Reload applications
-    loadApplications();
-    
-    // Close modal if open
-    closeModal();
-    
-    // Show success message
-    showToast(`Application ${status} successfully!`, 'success');
-}
+// updateApplicationStatus function removed - approval/rejection process has been replaced
 
 // Filter and Search Functions
 function filterApplications() {
@@ -2884,7 +4488,7 @@ function searchStudents() {
 }
 
 // Admin Password Change Function
-function changeAdminPassword() {
+async function changeAdminPassword() {
     const currentPassword = document.getElementById('currentPassword').value;
     const newPassword = document.getElementById('newPassword').value;
     const confirmNewPassword = document.getElementById('confirmNewPassword').value;
@@ -2905,31 +4509,46 @@ function changeAdminPassword() {
         return;
     }
     
-    // Check current password (in a real app, this would be hashed)
-    const adminCredentials = JSON.parse(localStorage.getItem('adminCredentials') || '{"email": "admin@grantes.com", "password": "admin123"}');
-    
-    if (currentPassword !== adminCredentials.password) {
-        showToast('Current password is incorrect', 'error');
-        return;
+    try {
+        // Get admin email from current session
+        const adminData = JSON.parse(localStorage.getItem('adminCredentials') || '{"email": "admin@grantes.com"}');
+        
+        console.log('Attempting to change admin password...');
+        
+        // Call API to update password in database
+        const response = await apiCall('update_admin_password.php', 'POST', {
+            email: adminData.email,
+            currentPassword: currentPassword,
+            newPassword: newPassword
+        });
+        
+        console.log('Password change response:', response);
+        
+        if (response && response.success) {
+            // Update localStorage
+            adminData.password = newPassword;
+            localStorage.setItem('adminCredentials', JSON.stringify(adminData));
+            
+            // Clear form
+            document.getElementById('currentPassword').value = '';
+            document.getElementById('newPassword').value = '';
+            document.getElementById('confirmNewPassword').value = '';
+            
+            showToast('Password changed successfully!', 'success');
+        } else {
+            showToast(response?.message || 'Failed to change password', 'error');
+        }
+    } catch (error) {
+        console.error('Error changing password:', error);
+        showToast('Failed to change password: ' + error.message, 'error');
     }
-    
-    // Update password
-    adminCredentials.password = newPassword;
-    localStorage.setItem('adminCredentials', JSON.stringify(adminCredentials));
-    
-    // Clear form
-    document.getElementById('currentPassword').value = '';
-    document.getElementById('newPassword').value = '';
-    document.getElementById('confirmNewPassword').value = '';
-    
-    showToast('Password changed successfully!', 'success');
 }
 
 // Student Password Change Functions
 let selectedStudentForPasswordChange = null;
 
-function searchStudentsForPasswordChange() {
-    const searchTerm = document.getElementById('studentSearch').value.trim().toLowerCase();
+async function searchStudentsForPasswordChange() {
+    const searchTerm = document.getElementById('studentSearch').value.trim();
     const resultsContainer = document.getElementById('studentSearchResults');
     
     if (searchTerm.length < 2) {
@@ -2937,42 +4556,52 @@ function searchStudentsForPasswordChange() {
         return;
     }
     
-    const students = JSON.parse(localStorage.getItem('students') || '[]');
-    const matchingStudents = students.filter(student => {
-        const fullName = `${student.firstName} ${student.lastName}`.toLowerCase();
-        const studentId = (student.studentId || '').toLowerCase();
-        const awardNumber = (student.awardNumber || '').toLowerCase();
-        const email = (student.email || '').toLowerCase();
+    try {
+        console.log('🔍 Searching students for password change:', searchTerm);
         
-        return fullName.includes(searchTerm) || 
-               studentId.includes(searchTerm) || 
-               awardNumber.includes(searchTerm) ||
-               email.includes(searchTerm);
-    }).slice(0, 10); // Limit to 10 results
+        // Search students from database
+        const response = await apiCall(`search_students.php?query=${encodeURIComponent(searchTerm)}`, 'GET');
+        
+        if (response && response.success && response.students) {
+            const matchingStudents = response.students.slice(0, 10); // Limit to 10 results
     
     if (matchingStudents.length === 0) {
         resultsContainer.innerHTML = '<div class="student-search-item"><p>No students found</p></div>';
     } else {
         resultsContainer.innerHTML = matchingStudents.map(student => `
             <div class="student-search-item" onclick="selectStudentForPasswordChange(${student.id})">
-                <h5>${student.firstName} ${student.lastName}</h5>
-                <p>ID: ${student.studentId || 'N/A'} | Award: ${student.awardNumber || 'N/A'} | Email: ${student.email || 'N/A'}</p>
+                        <h5>${student.firstName || student.first_name || ''} ${student.lastName || student.last_name || ''}</h5>
+                        <p>ID: ${student.studentId || student.student_id || 'N/A'} | Award: ${student.awardNumber || student.award_number || 'N/A'} | Email: ${student.email || 'N/A'}</p>
             </div>
         `).join('');
+            }
+        } else {
+            resultsContainer.innerHTML = '<div class="student-search-item"><p>No students found</p></div>';
     }
     
     resultsContainer.classList.add('show');
     resultsContainer.style.display = 'block';
+    } catch (error) {
+        console.error('❌ Error searching students:', error);
+        resultsContainer.innerHTML = '<div class="student-search-item"><p>Error searching students</p></div>';
+        resultsContainer.style.display = 'block';
+    }
 }
 
-function selectStudentForPasswordChange(studentId) {
-    const students = JSON.parse(localStorage.getItem('students') || '[]');
-    const student = students.find(s => s.id === studentId);
+async function selectStudentForPasswordChange(studentId) {
+    try {
+        console.log('📝 Selecting student for password change:', studentId);
+        
+        // Fetch student from database
+        const students = await getStudentsFromDatabase();
+        const student = students.find(s => s.id === studentId || s.id == studentId);
     
     if (!student) {
         showToast('Student not found', 'error');
         return;
     }
+        
+        console.log('✅ Student found:', student);
     
     selectedStudentForPasswordChange = student;
     
@@ -2981,9 +4610,9 @@ function selectStudentForPasswordChange(studentId) {
     
     // Show selected student info
     document.getElementById('selectedStudentInfo').innerHTML = `
-        <h5>${student.firstName} ${student.lastName}</h5>
-        <p><strong>Student ID:</strong> ${student.studentId || 'N/A'}</p>
-        <p><strong>Award Number:</strong> ${student.awardNumber || 'N/A'}</p>
+            <h5>${student.firstName || student.first_name || ''} ${student.lastName || student.last_name || ''}</h5>
+        <p><strong>Student ID:</strong> ${student.studentId || student.student_id || 'N/A'}</p>
+        <p><strong>Award Number:</strong> ${student.awardNumber || student.award_number || 'N/A'}</p>
         <p><strong>Email:</strong> ${student.email || 'N/A'}</p>
         <p><strong>Department:</strong> ${student.department || 'N/A'}</p>
     `;
@@ -2993,9 +4622,13 @@ function selectStudentForPasswordChange(studentId) {
     
     // Clear search input
     document.getElementById('studentSearch').value = '';
+    } catch (error) {
+        console.error('❌ Error loading student:', error);
+        showToast('Failed to load student data: ' + error.message, 'error');
+    }
 }
 
-function changeStudentPassword() {
+async function changeStudentPassword() {
     if (!selectedStudentForPasswordChange) {
         showToast('Please select a student first', 'error');
         return;
@@ -3020,22 +4653,57 @@ function changeStudentPassword() {
         return;
     }
     
-    // Update student password
-    const students = JSON.parse(localStorage.getItem('students') || '[]');
-    const studentIndex = students.findIndex(s => s.id === selectedStudentForPasswordChange.id);
-    
-    if (studentIndex === -1) {
-        showToast('Student not found in database', 'error');
-        return;
+    try {
+        // Call API to update password in database - use email or studentId
+        const requestData = {
+            newPassword: newPassword
+        };
+        
+        // Log the full student object for debugging
+        console.log('🔍 Selected student object:', selectedStudentForPasswordChange);
+        
+        // Add identifier (prefer email, then studentId, then id)
+        // Handle both camelCase and snake_case field names
+        const email = selectedStudentForPasswordChange.email;
+        const studentId = selectedStudentForPasswordChange.studentId || selectedStudentForPasswordChange.student_id;
+        const id = selectedStudentForPasswordChange.id;
+        
+        console.log('🔍 Extracted identifiers:', { email, studentId, id });
+        
+        if (email) {
+            requestData.email = email;
+            console.log('✅ Using email identifier:', email);
+        } else if (studentId) {
+            requestData.student_id = studentId;
+            console.log('✅ Using student_id identifier:', studentId);
+        } else if (id) {
+            requestData.studentId = id;
+            console.log('✅ Using id identifier:', id);
+        }
+        
+        console.log('📝 Calling password change API with data:', requestData);
+        const response = await apiCall('update_student_password.php', 'POST', requestData);
+        console.log('📥 API Response received:', response);
+        
+        if (response && response.success) {
+            console.log('✅ Password change successful');
+            
+            // Get student name before clearing
+            const studentName = selectedStudentForPasswordChange?.firstName || selectedStudentForPasswordChange?.first_name || 'Student';
+            const studentLastName = selectedStudentForPasswordChange?.lastName || selectedStudentForPasswordChange?.last_name || '';
+            
+            // Clear form
+            clearStudentPasswordForm();
+            
+            showToast(`Password changed successfully for ${studentName} ${studentLastName}`, 'success');
+        } else {
+            console.error('❌ Password change failed. Response:', response);
+            showToast(response?.message || 'Failed to change password', 'error');
+        }
+    } catch (error) {
+        console.error('Error changing student password:', error);
+        showToast('Failed to change password: ' + error.message, 'error');
     }
-    
-    students[studentIndex].password = newPassword;
-    localStorage.setItem('students', JSON.stringify(students));
-    
-    // Clear form
-    clearStudentPasswordForm();
-    
-    showToast(`Password changed successfully for ${selectedStudentForPasswordChange.firstName} ${selectedStudentForPasswordChange.lastName}`, 'success');
 }
 
 function clearStudentPasswordForm() {
@@ -3048,3 +4716,99 @@ function clearStudentPasswordForm() {
     document.getElementById('confirmStudentPassword').value = '';
 }
 
+// Student Change Own Password Functions
+function showStudentChangePasswordForm() {
+    if (!currentUser || currentUser.role !== 'student') {
+        showToast('You must be logged in as a student', 'error');
+        return;
+    }
+    
+    const modal = document.getElementById('studentChangePasswordModal');
+    if (!modal) {
+        showToast('Password change modal not found', 'error');
+        return;
+    }
+    
+    const student = currentUser.studentData;
+    const infoDiv = document.getElementById('selectedStudentInfoForPassword');
+    
+    infoDiv.innerHTML = `
+        <p><strong>Student:</strong> ${student.firstName || student.first_name} ${student.lastName || student.last_name}</p>
+        <p><strong>Email:</strong> ${student.email}</p>
+        <p><strong>Student ID:</strong> ${student.studentId || student.student_id}</p>
+    `;
+    
+    // Clear password fields
+    document.getElementById('studentNewPassword').value = '';
+    document.getElementById('studentConfirmPassword').value = '';
+    
+    modal.style.display = 'block';
+}
+
+function closeStudentChangePasswordModal() {
+    const modal = document.getElementById('studentChangePasswordModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    
+    // Clear password fields
+    document.getElementById('studentNewPassword').value = '';
+    document.getElementById('studentConfirmPassword').value = '';
+}
+
+async function changeOwnPassword() {
+    if (!currentUser || currentUser.role !== 'student') {
+        showToast('You must be logged in as a student', 'error');
+        return;
+    }
+    
+    const newPassword = document.getElementById('studentNewPassword').value;
+    const confirmPassword = document.getElementById('studentConfirmPassword').value;
+    
+    // Validation
+    if (!newPassword || !confirmPassword) {
+        showToast('Please fill in both password fields', 'error');
+        return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+        showToast('Passwords do not match', 'error');
+        return;
+    }
+    
+    if (newPassword.length < 6) {
+        showToast('Password must be at least 6 characters long', 'error');
+        return;
+    }
+    
+    try {
+        const student = currentUser.studentData;
+        const requestData = {
+            newPassword: newPassword
+        };
+        
+        // Add identifier (prefer email, then student_id, then id)
+        if (student.email) {
+            requestData.email = student.email;
+        } else if (student.studentId || student.student_id) {
+            requestData.student_id = student.studentId || student.student_id;
+        } else if (student.id) {
+            requestData.studentId = student.id;
+        }
+        
+        console.log('📝 Student changing own password:', requestData);
+        const response = await apiCall('update_student_password.php', 'POST', requestData);
+        console.log('📥 API Response received:', response);
+        
+        if (response && response.success) {
+            showToast('Password changed successfully!', 'success');
+            closeStudentChangePasswordModal();
+        } else {
+            console.error('❌ Password change failed. Response:', response);
+            showToast(response?.message || 'Failed to change password', 'error');
+        }
+    } catch (error) {
+        console.error('Error changing own password:', error);
+        showToast('Failed to change password: ' + error.message, 'error');
+    }
+}
